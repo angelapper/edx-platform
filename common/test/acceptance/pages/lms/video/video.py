@@ -57,7 +57,7 @@ VIDEO_MENUS = {
     'language': '.lang .menu',
     'speed': '.speed .menu',
     'download_transcript': '.video-tracks .a11y-menu-list',
-    'transcript-format': '.video-tracks .a11y-menu-button',
+    'transcript-format': '.wrapper-download-transcripts .list-download-transcripts .btn-link[data-href]',
     'transcript-skip': '.sr-is-focusable.transcript-start',
 }
 
@@ -595,8 +595,7 @@ class VideoPage(PageObject):
             'txt': 'text/plain',
         }
 
-        transcript_url_selector = self.get_element_selector(VIDEO_BUTTONS['download_transcript'])
-        url = self.q(css=transcript_url_selector).attrs('href')[0]
+        url = self.q(css=transcript_selector).attrs('href')[0]
         result, headers, content = self._get_transcript(url)
 
         if result is False:
