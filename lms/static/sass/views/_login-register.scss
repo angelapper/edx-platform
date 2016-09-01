@@ -553,6 +553,20 @@
         .message-copy {
 
         }
+        
+        // We need to show sr text here used in AC-578
+        // so we override normal sr styles
+        .sr,
+        .sr-only {
+            clip: initial;
+            position: relative;
+            margin: auto;
+            height: auto;
+            width: auto;
+            overflow: auto;
+            background: transparent;
+            color: inherit;
+        }
     }
 
     .submission-success {

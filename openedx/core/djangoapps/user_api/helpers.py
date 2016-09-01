@@ -168,7 +168,7 @@ class FormDescription(object):
 
         Keyword Arguments:
             label (unicode): The label for the field (e.g. "E-mail" or "Username")
-            
+
             label_link (unicode): A link that goes with a label, since it's not advisable
                 to put links within labels.
 

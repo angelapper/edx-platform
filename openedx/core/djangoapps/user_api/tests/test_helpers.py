@@ -98,6 +98,7 @@ class FormDescriptionTest(TestCase):
                 {
                     "name": "name",
                     "label": "label",
+                    "label_link": "",
                     "type": "text",
                     "defaultValue": "default",
                     "placeholder": "placeholder",
