@@ -234,7 +234,7 @@ class PersistentSubsectionGrade(TimeStampedModel):
             self.user_id,
             self.course_version,
             self.usage_key,
-            self.visible_blocks.hashed,
+            self.visible_blocks_id,
             self.earned_graded,
             self.possible_graded,
             self.earned_all,
@@ -251,17 +251,23 @@ class PersistentSubsectionGrade(TimeStampedModel):
         usage_key = kwargs.pop('usage_key')
         try:
             with transaction.atomic():
-                grade, is_created = cls.objects.get_or_create(
+                grade, _ = cls.objects.update_or_create(
                     user_id=user_id,
                     course_id=usage_key.course_key,
                     usage_key=usage_key,
                     defaults=kwargs,
                 )
+            log.info(u"Persistent Grades: Grade model saved: {0}".format(grade))
         except IntegrityError:
-            cls.update_grade(user_id=user_id, usage_key=usage_key, **kwargs)
-        else:
-            if not is_created:
-                grade.update(**kwargs)
+            # TODO: enqueue a celery task to update the grade per TNL-5471
+            log.warning(
+                u"Persistent Grades: Integrity error trying to save grade for user {0}, usage key {1}, defaults {2}"
+                .format(
+                    user_id,
+                    usage_key,
+                    **kwargs
+                )
+            )
 
     @classmethod
     def read_grade(cls, user_id, usage_key):
@@ -344,3 +350,4 @@ class PersistentSubsectionGrade(TimeStampedModel):
         self.possible_graded = possible_graded
         self.visible_blocks_id = visible_blocks_hash  # pylint: disable=attribute-defined-outside-init
         self.save()
+        log.info(u"Persistent Grades: Grade model updated: {0}".format(self))
