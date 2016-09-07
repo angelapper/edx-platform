@@ -47,9 +47,7 @@ class Thread(models.Model):
 
         default_params = {'page': 1,
                           'per_page': 20,
-                          'course_id': query_params['course_id'],
-                          'recursive': False,
-                          'with_responses': True}
+                          'course_id': query_params['course_id']}
         params = merge_dict(default_params, strip_blank(strip_none(query_params)))
 
         if query_params.get('text'):
