@@ -24,6 +24,8 @@ function() {
         if (this.container.find('.wrapper-downloads .wrapper-download-transcripts')) {
             this.initialize();
         }
+
+        return false;
     };
 
     VideoTranscriptDownloadHandler.prototype = {
@@ -49,7 +51,7 @@ function() {
 
         changeFileType: function(event) {
             var fileType = $(event.currentTarget).data('value'),
-                data = {'transcript_download_format': fileType},
+                data = {transcript_download_format: fileType},
                 url = $(event.currentTarget).attr('href'),
                 that = this;
 
