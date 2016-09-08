@@ -136,9 +136,21 @@ class ProblemPage(PageObject):
         self.q(css='.problem .show').click()
         self.wait_for_ajax()
 
+    def is_save_notification_visible(self):
+        return self.q(css='.notification.save').visible
+
+    def wait_for_save_notification_visible(self):
+        """
+        Wait for the Save Notification to be present
+        """
+        self.wait_for_element_visibility('.notification.save', 'Waiting for Save notification to be visible')
+
     def is_reset_button_present(self):
         """ Check for the presence of the reset button. """
         return self.q(css='.problem .reset').present
+
+    def is_save_notification_focused(self):
+        return self.q(css='.notification.save').focused
 
     def is_save_button_visible_disabled(self):
         """ Check for the visibility of the disabled Save button """

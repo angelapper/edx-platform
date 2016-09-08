@@ -137,6 +137,7 @@ class ProblemTypeTestMixin(object):
     Test cases shared amongst problem types.
     """
     can_submit_blank = False
+    can_update_save_notification = True
 
     @attr(shard=7)
     def test_answer_correctly(self):
@@ -254,21 +255,26 @@ class ProblemTypeTestMixin(object):
         And I can see a CAPA problem with the Save button present
         When I select and answer and click the "Save" button
         Then I should see the Save notification
-        And the Save button should be disabled
+        And it should have focus
         And if I change the answer selected
-        Then the "Save" button should be enabled and visible
+        Then Save notification should no longer be present.
         """
         self.problem_page.wait_for(
             lambda: self.problem_page.problem_name == self.problem_name,
             "Make sure the correct problem is on the page"
         )
+
         self.problem_page.wait_for_page()
         self.answer_problem(correct=True)
         self.assertFalse(self.problem_page.is_save_button_visible_disabled())
         self.problem_page.click_save()
-        self.assertTrue(self.problem_page.is_save_button_visible_disabled())
+        self.problem_page.wait_for_save_notification_visible()
+        self.assertTrue(self.problem_page.is_save_notification_focused())
         self.answer_problem(correct=False)
-        self.assertFalse(self.problem_page.is_save_button_visible_disabled())
+
+        # Not all problems will remove the save notification on an answer change.
+        if self.can_update_save_notification:
+            self.assertFalse(self.problem_page.is_save_notification_visible())
 
     @attr(shard=7)
     def test_reset_clears_answer_and_focus(self):
@@ -335,6 +341,7 @@ class AnnotationProblemTypeTest(ProblemTypeTestBase, ProblemTypeTestMixin):
     factory = AnnotationResponseXMLFactory()
 
     can_submit_blank = True
+    can_update_save_notification = False
     factory_kwargs = {
         'title': 'Annotation Problem',
         'text': 'The text being annotated',
@@ -703,7 +710,7 @@ class CodeProblemTypeTest(ProblemTypeTestBase, ProblemTypeTestMixin):
     """
     problem_name = 'CODE TEST PROBLEM'
     problem_type = 'code'
-
+    can_update_save_notification = False
     factory = CodeResponseXMLFactory()
 
     factory_kwargs = {
@@ -779,6 +786,7 @@ class ChoiceTextProbelmTypeTestBase(ProblemTypeTestBase):
     (e.g. RadioText, CheckboxText)
     """
     choice_type = None
+    can_update_save_notification = False
 
     def _select_choice(self, input_num):
         """
@@ -815,6 +823,7 @@ class RadioTextProblemTypeTest(ChoiceTextProbelmTypeTestBase, ProblemTypeTestMix
     problem_name = 'RADIO TEXT TEST PROBLEM'
     problem_type = 'radio_text'
     choice_type = 'radio'
+    can_update_save_notification = False
 
     factory = ChoiceTextResponseXMLFactory()
 
@@ -848,6 +857,7 @@ class CheckboxTextProblemTypeTest(ChoiceTextProbelmTypeTestBase, ProblemTypeTest
     problem_type = 'checkbox_text'
     choice_type = 'checkbox'
     factory = ChoiceTextResponseXMLFactory()
+    can_update_save_notification = False
 
     factory_kwargs = {
         'question_text': 'The correct answer is Choice 0 and input 8',
@@ -875,6 +885,7 @@ class ImageProblemTypeTest(ProblemTypeTestBase, ProblemTypeTestMixin):
     factory = ImageResponseXMLFactory()
 
     can_submit_blank = True
+    can_update_save_notification = False
 
     factory_kwargs = {
         'src': '/static/images/placeholder-image.png',
