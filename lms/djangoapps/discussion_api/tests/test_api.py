@@ -1172,8 +1172,10 @@ class GetCommentListTest(CommentsServiceMockMixin, SharedModuleStoreTestCase):
             {
                 "user_id": [str(self.user.id)],
                 "mark_as_read": ["False"],
+                "recursive": ["False"],
                 "resp_skip": ["70"],
                 "resp_limit": ["14"],
+                "with_responses": ["True"],
             }
         )
 

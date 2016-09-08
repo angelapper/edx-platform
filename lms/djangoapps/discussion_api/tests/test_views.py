@@ -1123,6 +1123,8 @@ class CommentViewSetListTest(DiscussionAPIViewTestMixin, ModuleStoreTestCase, Pr
                 "resp_limit": ["10"],
                 "user_id": [str(self.user.id)],
                 "mark_as_read": ["False"],
+                "recursive": ["False"],
+                "with_responses": ["True"],
             }
         )
 
@@ -1155,6 +1157,8 @@ class CommentViewSetListTest(DiscussionAPIViewTestMixin, ModuleStoreTestCase, Pr
                 "resp_limit": ["4"],
                 "user_id": [str(self.user.id)],
                 "mark_as_read": ["False"],
+                "recursive": ["False"],
+                "with_responses": ["True"],
             }
         )
 
