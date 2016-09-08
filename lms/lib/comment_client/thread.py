@@ -45,6 +45,10 @@ class Thread(models.Model):
     @classmethod
     def search(cls, query_params):
 
+        # NOTE: Params 'recursive' and 'with_responses' are currently not used by
+        # either the 'search' or 'get_all' actions below.  Both already use
+        # with_responses=False internally in the comment service, so no additional
+        # optimization is required.
         default_params = {'page': 1,
                           'per_page': 20,
                           'course_id': query_params['course_id']}

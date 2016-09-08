@@ -977,6 +977,8 @@ def get_thread(request, thread_id, requested_fields=None):
         requested_fields: Indicates which additional fields to return for
         thread. (i.e. ['profile_image'])
     """
+    # Possible candidate for optimization with caching:
+    #   Param with_responses=True required only to add "response_count" to response.
     cc_thread, context = _get_thread_and_context(
         request,
         thread_id,
