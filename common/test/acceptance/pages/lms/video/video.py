@@ -57,7 +57,7 @@ VIDEO_MENUS = {
     'language': '.lang .menu',
     'speed': '.speed .menu',
     'download_transcript': '.video-tracks .a11y-menu-list',
-    'transcript-format': '.wrapper-download-transcripts .list-download-transcripts .btn-link[data-href]',
+    'transcript-format': '.wrapper-download-transcripts .list-download-transcripts .btn-link[data-value]',
     'transcript-skip': '.sr-is-focusable.transcript-start',
 }
 
@@ -587,7 +587,7 @@ class VideoPage(PageObject):
         transcript_selector = self.get_element_selector(VIDEO_MENUS['transcript-format'])
 
         # check if we have a transcript with correct format
-        if '.' + transcript_format not in self.q(css=transcript_selector).text[0]:
+        if '.' + transcript_format not in self.q(css=transcript_selector):
             return False
 
         formats = {

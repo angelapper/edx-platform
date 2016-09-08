@@ -2,8 +2,8 @@
     'use strict';
 // VideoTranscriptDownloadHandler module.
     define(
-'video/035_video_accessible_menu.js', [],
-function() {
+'video/035_video_accessible_menu.js', ['underscore'],
+function(_) {
     /**
      * Video Download Transcript control module.
      * @exports video/035_video_accessible_menu.js
