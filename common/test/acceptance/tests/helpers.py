@@ -810,7 +810,7 @@ def assert_nav_help_link(test, page, href, signed_in=True):
     assert_opened_help_link_is_correct(test, href)
 
 
-def assert_side_bar_help_link(test, page, href, help_text, as_list_item=False):
+def assert_side_bar_help_link(test, page, href, help_text, as_list_item=False, index=-1):
     """
     Asserts that help link in side bar is correct.
 
@@ -829,7 +829,7 @@ def assert_side_bar_help_link(test, page, href, help_text, as_list_item=False):
         'text': help_text
     }
     # Get actual anchor help element from the page.
-    actual_link = page.get_side_bar_help_element_and_click_help(as_list_item)
+    actual_link = page.get_side_bar_help_element_and_click_help(as_list_item=as_list_item, index=index)
     # Assert that 'href' and text are the same as expected.
     assert_link(test, expected_link, actual_link)
     # Assert that opened link is correct
