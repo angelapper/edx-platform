@@ -42,6 +42,7 @@ class @Problem
     @showButton = @$('div.action button.show')
     @showButton.click @show
     @saveButton = @$('.problem .problem-action-buttons-wrapper .save')
+    @saveNotificationArea = @$('.notification.save')
     @saveButtonLabel = @$('.problem .problem-action-buttons-wrapper .save .save-label')
     @saveButton.click @save
 
@@ -340,7 +341,6 @@ class @Problem
         Logger.log 'problem_graded', [@answers, response.contents], @id
 
     $.ajaxWithPrefix("#{@url}/problem_check", settings)
-    @enableSaveButton false, false
 
   check: =>
     if not @check_save_waitfor(@check_internal)
@@ -360,7 +360,6 @@ class @Problem
           @$('div.action button.check').focus()
         else
           @gentle_alert response.success
-      @enableSaveButton false, false
       Logger.log 'problem_graded', [@answers, response.contents], @id
 
   reset: =>
@@ -442,10 +441,7 @@ class @Problem
       @disableAllButtonsWhileRunning @save_internal, false
 
   focus_on_save_notification: =>
-    @saveNotificationArea = @$('.notification.save')
     @saveNotificationArea.focus()
-    # TODO: Wait for render to complete to disable the save button and focus.
-    @enableSaveButton false, true
 
   save_internal: =>
     Logger.log 'problem_save', @answers
@@ -454,23 +450,6 @@ class @Problem
         @el.trigger('contentChanged', [@id, response.html])
         @render(response.html, @focus_on_save_notification)
       @updateProgress response
-
-  enableSaveButton: (enable, changeText = false) =>
-    # Used to disable save button if there is no change to the submission and enable if there is.
-    # params:
-    #   'enable' is a boolean to determine enabling/disabling of check button.
-    #   'changeText' is a boolean to determine if there is need to change the
-    #    text of save button as well.
-    if enable
-      @saveButton.removeClass 'is-disabled'
-      @saveButton.removeAttr 'disabled'
-      if changeText
-        @saveButtonLabel.text('Save')
-    else
-      @saveButton.addClass 'is-disabled'
-      @saveButton.attr({'disabled': 'disabled'})
-      if changeText
-        @saveButtonLabel.text('Saved')
 
   refreshMath: (event, element) =>
     element = event.target unless element
@@ -504,7 +483,7 @@ class @Problem
       element.CodeMirror.save() if element.CodeMirror.save
     @answers = @inputs.serialize()
 
-  checkAnswersAndCheckButton: (bind=false) =>
+  checkAnswersAndCheckButton: (bind=false, data_changed=false) =>
     # Used to check available answers and if something is checked (or the answer is set in some textbox)
     # "Check"/"Final check" button becomes enabled. Otherwise it is disabled by default.
     # params:
@@ -520,7 +499,8 @@ class @Problem
           one_text_input_filled = true
         if bind
           $(text_field).on 'input', (e) =>
-            @checkAnswersAndCheckButton()
+            debugger
+            @checkAnswersAndCheckButton false, true
             return
           return
     if at_least_one_text_input_found and not one_text_input_filled
@@ -533,7 +513,7 @@ class @Problem
           checked = true
         if bind
           $(checkbox_or_radio).on 'click', (e) =>
-            @checkAnswersAndCheckButton()
+            @checkAnswersAndCheckButton false, true
             return
           return
       if not checked
@@ -546,16 +526,17 @@ class @Problem
         answered = false
       if bind
         $(select_field).on 'change', (e) =>
-          @checkAnswersAndCheckButton()
+            @checkAnswersAndCheckButton false, true
           return
         return
 
     if answered
       @enableCheckButton true
-      @enableSaveButton true, true
+      debugger
+      if data_changed
+        @saveNotificationArea.remove()
     else
       @enableCheckButton false
-      @enableSaveButton false
 
   bindResetCorrectness: ->
     # Loop through all input types
@@ -809,6 +790,7 @@ class @Problem
     # only when the user has made a change to the problem submission.
     if enable
       @resetButton
+        .add(@saveButton)
         .add(@hintButton)
         .add(@showButton)
         .removeClass('is-disabled')
