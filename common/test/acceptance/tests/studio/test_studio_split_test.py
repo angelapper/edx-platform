@@ -4,25 +4,23 @@ Acceptance tests for Studio related to the split_test module.
 
 import math
 from unittest import skip
+
+from bok_choy.promise import Promise
 from nose.plugins.attrib import attr
 from selenium.webdriver.support.ui import Select
 
-from xmodule.partitions.partitions import Group
-from bok_choy.promise import Promise, EmptyPromise
-
+from base_studio_test import StudioCourseTest
 from common.test.acceptance.fixtures.course import XBlockFixtureDesc
-from common.test.acceptance.pages.studio.component_editor import ComponentEditorView
-from common.test.acceptance.pages.studio.overview import CourseOutlinePage, CourseOutlineUnit
+from common.test.acceptance.pages.lms.courseware import CoursewarePage
 from common.test.acceptance.pages.studio.container import ContainerPage
+from common.test.acceptance.pages.studio.overview import CourseOutlinePage, CourseOutlineUnit
 from common.test.acceptance.pages.studio.settings_group_configurations import GroupConfigurationsPage
 from common.test.acceptance.pages.studio.utils import add_advanced_component
+from common.test.acceptance.pages.studio.xblock_editor import XBlockEditorView
 from common.test.acceptance.pages.xblock.utils import wait_for_xblock_initialization
-from common.test.acceptance.pages.lms.courseware import CoursewarePage
 from common.test.acceptance.tests.helpers import create_user_partition_json
-
-from base_studio_test import StudioCourseTest
-
 from test_studio_container import ContainerBase
+from xmodule.partitions.partitions import Group
 
 
 class SplitTestMixin(object):
@@ -128,7 +126,7 @@ class SplitTest(ContainerBase, SplitTestMixin):
         add_advanced_component(unit, 0, 'split_test')
         container = self.go_to_nested_container_page()
         container.edit()
-        component_editor = ComponentEditorView(self.browser, container.locator)
+        component_editor = XBlockEditorView(self.browser, container.locator)
         component_editor.set_select_value_and_save('Group Configuration', 'Configuration alpha,beta')
         self.course_fixture._update_xblock(self.course_fixture._course_location, {
             "metadata": {
@@ -153,7 +151,7 @@ class SplitTest(ContainerBase, SplitTestMixin):
         add_advanced_component(unit, 0, 'split_test')
         container = self.go_to_nested_container_page()
         container.edit()
-        component_editor = ComponentEditorView(self.browser, container.locator)
+        component_editor = XBlockEditorView(self.browser, container.locator)
         component_editor.set_select_value_and_save('Group Configuration', 'Configuration alpha,beta')
         self.verify_groups(container, ['alpha', 'beta'], [])
 
@@ -161,7 +159,7 @@ class SplitTest(ContainerBase, SplitTestMixin):
         # that there is only a single "editor" on the page.
         container = self.go_to_nested_container_page()
         container.edit()
-        component_editor = ComponentEditorView(self.browser, container.locator)
+        component_editor = XBlockEditorView(self.browser, container.locator)
         component_editor.set_select_value_and_save('Group Configuration', 'Configuration 0,1,2')
         self.verify_groups(container, ['Group 0', 'Group 1', 'Group 2'], ['Group ID 0', 'Group ID 1'])
 
@@ -539,7 +537,7 @@ class GroupConfigurationsTest(ContainerBase, SplitTestMixin):
         container = ContainerPage(self.browser, split_test.locator)
         container.visit()
         container.edit()
-        component_editor = ComponentEditorView(self.browser, container.locator)
+        component_editor = XBlockEditorView(self.browser, container.locator)
         component_editor.set_select_value_and_save('Group Configuration', 'New Group Configuration Name')
         self.verify_groups(container, ['Group A', 'Group B', 'New group'], [])
 
@@ -591,7 +589,7 @@ class GroupConfigurationsTest(ContainerBase, SplitTestMixin):
         container = ContainerPage(self.browser, split_test.locator)
         container.visit()
         container.edit()
-        component_editor = ComponentEditorView(self.browser, container.locator)
+        component_editor = XBlockEditorView(self.browser, container.locator)
         self.assertEqual(
             "Second Group Configuration Name",
             component_editor.get_selected_option_text('Group Configuration')
@@ -759,10 +757,7 @@ class GroupConfigurationsTest(ContainerBase, SplitTestMixin):
         config.click_outline_anchor()
 
         # Waiting for the page load and verify that we've landed on course outline page
-        EmptyPromise(
-            lambda: self.outline_page.is_browser_on_page(), "loaded page {!r}".format(self.outline_page),
-            timeout=30
-        ).fulfill()
+        self.outline_page.wait_for_page()
 
     def test_group_configuration_non_empty_usage(self):
         """
@@ -806,10 +801,7 @@ class GroupConfigurationsTest(ContainerBase, SplitTestMixin):
 
         unit = ContainerPage(self.browser, vertical.locator)
         # Waiting for the page load and verify that we've landed on the unit page
-        EmptyPromise(
-            lambda: unit.is_browser_on_page(), "loaded page {!r}".format(unit),
-            timeout=30
-        ).fulfill()
+        unit.wait_for_page()
 
         self.assertIn(unit.name, usage)
 

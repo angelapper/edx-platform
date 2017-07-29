@@ -1,75 +1,29 @@
 """
 This module contains signals needed for email integration
 """
-import logging
 import datetime
+import logging
+
 import crum
-
-from django.dispatch import receiver
-from django.core.urlresolvers import reverse
 from django.conf import settings
-
-from student.models import ENROLL_STATUS_CHANGE
-from student.cookies import CREATE_LOGON_COOKIE
-from student.views import REGISTER_USER
-from email_marketing.models import EmailMarketingConfiguration
-from util.model_utils import USER_FIELD_CHANGED
-from lms.djangoapps.email_marketing.tasks import update_user, update_user_email, update_course_enrollment
-
+from django.dispatch import receiver
 from sailthru.sailthru_client import SailthruClient
 from sailthru.sailthru_error import SailthruClientError
+from celery.exceptions import TimeoutError
+
+from email_marketing.models import EmailMarketingConfiguration
+from lms.djangoapps.email_marketing.tasks import update_user, update_user_email, get_email_cookies_via_sailthru
+from openedx.core.djangoapps.lang_pref import LANGUAGE_KEY
+from student.cookies import CREATE_LOGON_COOKIE
+from student.views import REGISTER_USER
+from util.model_utils import USER_FIELD_CHANGED
 
 log = logging.getLogger(__name__)
 
 # list of changed fields to pass to Sailthru
 CHANGED_FIELDNAMES = ['username', 'is_active', 'name', 'gender', 'education',
                       'age', 'level_of_education', 'year_of_birth',
-                      'country']
-
-
-@receiver(ENROLL_STATUS_CHANGE)
-def handle_enroll_status_change(sender, event=None, user=None, mode=None, course_id=None,
-                                **kwargs):  # pylint: disable=unused-argument
-    """
-    Signal receiver for enroll/unenroll/purchase events
-    """
-    email_config = EmailMarketingConfiguration.current()
-    if not email_config.enabled or not event or not user or not mode or not course_id:
-        return
-
-    # skip tracking (un)enrolls if simulated cost=0
-    if email_config.sailthru_enroll_cost == 0:
-        return
-
-    request = crum.get_current_request()
-    if not request:
-        return
-
-    # get string course_id serializable to send through celery
-    course_id_string = unicode(course_id)
-
-    # figure out course url
-    course_url = _build_course_url(request, course_id_string, email_config)
-
-    # pass event to email_marketing.tasks
-    update_course_enrollment.delay(user.email, course_url, event, mode,
-                                   course_id=course_id_string,
-                                   message_id=request.COOKIES.get('sailthru_bid'))
-
-
-def _build_course_url(request, course_id, email_config):
-    """
-    Build a course url from a course id and the host from the current request
-    or use override in config
-    :param request:
-    :param course_id:
-    :return:
-    """
-    path = reverse('info', kwargs={'course_id': course_id})
-    if email_config.sailthru_lms_url_override:
-        return '{}{}'.format(email_config.sailthru_lms_url_override, path)
-    else:
-        return '{}://{}{}'.format(request.scheme, request.get_host(), path)
+                      'country', LANGUAGE_KEY]
 
 
 @receiver(CREATE_LOGON_COOKIE)
@@ -95,38 +49,43 @@ def add_email_marketing_cookies(sender, response=None, user=None,
         'vars': {'last_login_date': datetime.datetime.now().strftime("%Y-%m-%d")}
     }
 
-    # get sailthru_content cookie to capture usage before logon
+    # get anonymous_interest cookie to capture usage before logon
     request = crum.get_current_request()
     if request:
-        sailthru_content = request.COOKIES.get('sailthru_content')
+        sailthru_content = request.COOKIES.get('anonymous_interest')
         if sailthru_content:
-            post_parms['cookies'] = {'sailthru_content': sailthru_content}
+            post_parms['cookies'] = {'anonymous_interest': sailthru_content}
+
+    time_before_call = datetime.datetime.now()
+    sailthru_response = get_email_cookies_via_sailthru.delay(user.email, post_parms)
 
     try:
-        sailthru_client = SailthruClient(email_config.sailthru_key, email_config.sailthru_secret)
-        sailthru_response = \
-            sailthru_client.api_post("user", post_parms)
+        # synchronous call to get result of an asynchronous celery task, with timeout
+        sailthru_response.get(timeout=email_config.user_registration_cookie_timeout_delay,
+                              propagate=True)
+        cookie = sailthru_response.result
+        _log_sailthru_api_call_time(time_before_call)
+
+    except TimeoutError as exc:
+        log.error("Timeout error while attempting to obtain cookie from Sailthru: %s", unicode(exc))
+        return response
     except SailthruClientError as exc:
         log.error("Exception attempting to obtain cookie from Sailthru: %s", unicode(exc))
         return response
 
-    if sailthru_response.is_ok():
-        if 'keys' in sailthru_response.json and 'cookie' in sailthru_response.json['keys']:
-            cookie = sailthru_response.json['keys']['cookie']
-
-            response.set_cookie(
-                'sailthru_hid',
-                cookie,
-                max_age=365 * 24 * 60 * 60,  # set for 1 year
-                domain=settings.SESSION_COOKIE_DOMAIN,
-                path='/',
-            )
-        else:
-            log.error("No cookie returned attempting to obtain cookie from Sailthru for %s", user.email)
+    if not cookie:
+        log.error("No cookie returned attempting to obtain cookie from Sailthru for %s", user.email)
+        return response
     else:
-        error = sailthru_response.get_error()
-        # generally invalid email address
-        log.info("Error attempting to obtain cookie from Sailthru: %s", error.get_message())
+        response.set_cookie(
+            'sailthru_hid',
+            cookie,
+            max_age=365 * 24 * 60 * 60,  # set for 1 year
+            domain=settings.SESSION_COOKIE_DOMAIN,
+            path='/',
+        )
+        log.info("sailthru_hid cookie:%s successfully retrieved for user %s", cookie, user.email)
+
     return response
 
 
@@ -151,7 +110,9 @@ def email_marketing_register_user(sender, user=None, profile=None,
         return
 
     # perform update asynchronously
-    update_user.delay(_create_sailthru_user_vars(user, user.profile), user.email, new_user=True)
+    update_user.delay(
+        _create_sailthru_user_vars(user, user.profile), user.email, site=_get_current_site(), new_user=True
+    )
 
 
 @receiver(USER_FIELD_CHANGED)
@@ -175,8 +136,8 @@ def email_marketing_user_field_changed(sender, user=None, table=None, setting=No
     if user.is_anonymous():
         return
 
-    # ignore anything but User or Profile table
-    if table != 'auth_user' and table != 'auth_userprofile':
+    # ignore anything but User, Profile or UserPreference tables
+    if table not in {'auth_user', 'auth_userprofile', 'user_api_userpreference'}:
         return
 
     # ignore anything not in list of fields to handle
@@ -187,10 +148,10 @@ def email_marketing_user_field_changed(sender, user=None, table=None, setting=No
         email_config = EmailMarketingConfiguration.current()
         if not email_config.enabled:
             return
+
         # perform update asynchronously, flag if activation
-        update_user.delay(_create_sailthru_user_vars(user, user.profile), user.email,
-                          new_user=False,
-                          activation=(setting == 'is_active') and new_value is True)
+        update_user.delay(_create_sailthru_user_vars(user, user.profile), user.email, site=_get_current_site(),
+                          new_user=False, activation=(setting == 'is_active') and new_value is True)
 
     elif setting == 'email':
         # email update is special case
@@ -208,6 +169,9 @@ def _create_sailthru_user_vars(user, profile):
                      'activated': int(user.is_active),
                      'joined_date': user.date_joined.strftime("%Y-%m-%d")}
 
+    # Set the ui_lang to the User's prefered language, if specified. Otherwise use the application's default language.
+    sailthru_vars['ui_lang'] = user.preferences.model.get_value(user, LANGUAGE_KEY, default=settings.LANGUAGE_CODE)
+
     if profile:
         sailthru_vars['fullname'] = profile.name
         sailthru_vars['gender'] = profile.gender
@@ -218,3 +182,28 @@ def _create_sailthru_user_vars(user, profile):
         sailthru_vars['country'] = unicode(profile.country.code)
 
     return sailthru_vars
+
+
+def _get_current_site():
+    """
+    Returns the site for the current request if any.
+    """
+    request = crum.get_current_request()
+    if not request:
+        return
+
+    return {'id': request.site.id, 'domain': request.site.domain, 'name': request.site.name}
+
+
+def _log_sailthru_api_call_time(time_before_call):
+    """
+    Logs Sailthru api synchronous call time
+    """
+
+    time_after_call = datetime.datetime.now()
+    delta_sailthru_api_call_time = time_after_call - time_before_call
+
+    log.info("Started at %s and ended at %s, time spent:%s milliseconds",
+             time_before_call.isoformat(' '),
+             time_after_call.isoformat(' '),
+             delta_sailthru_api_call_time.microseconds / 1000)

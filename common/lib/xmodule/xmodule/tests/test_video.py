@@ -12,15 +12,17 @@ You can then use the CourseFactory and XModuleItemFactory as defined
 in common/lib/xmodule/xmodule/modulestore/tests/factories.py to create
 the course, section, subsection, unit, etc.
 """
+import os
 import unittest
 import datetime
 from uuid import uuid4
 
 from lxml import etree
-from mock import ANY, Mock, patch
+from mock import ANY, Mock, patch, MagicMock
 import ddt
 
 from django.conf import settings
+from django.test.utils import override_settings
 
 from opaque_keys.edx.locations import SlashSeparatedCourseKey
 from opaque_keys.edx.keys import CourseKey
@@ -28,6 +30,7 @@ from xblock.field_data import DictFieldData
 from xblock.fields import ScopeIds
 
 from xmodule.tests import get_test_descriptor_system
+from xmodule.validation import StudioValidationMessage
 from xmodule.video_module import VideoDescriptor, create_youtube_string
 from xmodule.video_module.transcripts_utils import download_youtube_subs, save_to_store
 from . import LogicTest
@@ -75,6 +78,12 @@ YOUTUBE_SUBTITLES = (
     " navigate directly to any video or exercise by clicking on the appropriate tab. You can also"
     " progress to the next element by pressing the Arrow button, or by clicking on the next tab. Try"
     " that now. The tutorial will continue in the next video."
+)
+
+ALL_LANGUAGES = (
+    [u"en", u"English"],
+    [u"eo", u"Esperanto"],
+    [u"ur", u"Urdu"]
 )
 
 
@@ -664,7 +673,7 @@ class VideoExportTestCase(VideoDescriptorTestBase):
         """
         Test that we write the correct XML on export.
         """
-        def mock_val_export(edx_video_id):
+        def mock_val_export(edx_video_id, course_id):
             """Mock edxval.api.export_to_xml"""
             return etree.Element(
                 'video_asset',
@@ -686,6 +695,7 @@ class VideoExportTestCase(VideoDescriptorTestBase):
         self.descriptor.download_video = True
         self.descriptor.transcripts = {'ua': 'ukrainian_translation.srt', 'ge': 'german_translation.srt'}
         self.descriptor.edx_video_id = 'test_edx_video_id'
+        self.descriptor.runtime.course_id = MagicMock()
 
         xml = self.descriptor.definition_to_xml(None)  # We don't use the `resource_fs` parameter
         parser = etree.XMLParser(remove_blank_text=True)
@@ -709,6 +719,7 @@ class VideoExportTestCase(VideoDescriptorTestBase):
         mock_val_api.ValVideoNotFoundError = _MockValVideoNotFoundError
         mock_val_api.export_to_xml = Mock(side_effect=mock_val_api.ValVideoNotFoundError)
         self.descriptor.edx_video_id = 'test_edx_video_id'
+        self.descriptor.runtime.course_id = MagicMock()
 
         xml = self.descriptor.definition_to_xml(None)
         parser = etree.XMLParser(remove_blank_text=True)
@@ -780,6 +791,7 @@ class VideoExportTestCase(VideoDescriptorTestBase):
         self.assertEqual(xml.get('display_name'), u'\u8fd9\u662f\u6587')
 
 
+@ddt.ddt
 class VideoDescriptorIndexingTestCase(unittest.TestCase):
     """
     Make sure that VideoDescriptor can format data for indexing as expected.
@@ -812,7 +824,7 @@ class VideoDescriptorIndexingTestCase(unittest.TestCase):
         settings.CONTENTSTORE = {
             'ENGINE': 'xmodule.contentstore.mongo.MongoContentStore',
             'DOC_STORE_CONFIG': {
-                'host': 'localhost',
+                'host': 'edx.devstack.mongo' if 'BOK_CHOY_HOSTNAME' in os.environ else 'localhost',
                 'db': 'test_xcontent_%s' % uuid4().hex,
             },
             # allow for additional options that can be keyed on a name, e.g. 'trashcan'
@@ -993,3 +1005,84 @@ class VideoDescriptorIndexingTestCase(unittest.TestCase):
         descriptor = instantiate_descriptor(data=None)
         translations = descriptor.available_translations(descriptor.get_transcripts_info(), verify_assets=False)
         self.assertEqual(translations, ['en'])
+
+    @override_settings(ALL_LANGUAGES=ALL_LANGUAGES)
+    def test_video_with_language_do_not_have_transcripts_translation(self):
+        """
+        Test translation retrieval of a video module with
+        a language having no transcripts uploaded by a user.
+        """
+        xml_data_transcripts = '''
+            <video display_name="Test Video"
+                   youtube="1.0:p2Q6BrNhdh8,0.75:izygArpw-Qo,1.25:1EeWXzPdhSA,1.5:rABDYkeK0x8"
+                   show_captions="false"
+                   download_track="false"
+                   start_time="00:00:01"
+                   download_video="false"
+                   end_time="00:01:00">
+              <source src="http://www.example.com/source.mp4"/>
+              <track src="http://www.example.com/track"/>
+              <handout src="http://www.example.com/handout"/>
+              <transcript language="ur" src="" />
+            </video>
+        '''
+        descriptor = instantiate_descriptor(data=xml_data_transcripts)
+        translations = descriptor.available_translations(descriptor.get_transcripts_info(), verify_assets=False)
+        self.assertNotEqual(translations, ['ur'])
+
+    def assert_validation_message(self, validation, expected_msg):
+        """
+        Asserts that the validation message has all expected content.
+
+        Args:
+            validation (StudioValidation): A validation object.
+            expected_msg (string): An expected validation message.
+        """
+        self.assertFalse(validation.empty)  # Validation contains some warning/message
+        self.assertTrue(validation.summary)
+        self.assertEqual(StudioValidationMessage.WARNING, validation.summary.type)
+        self.assertIn(expected_msg, validation.summary.text)
+
+    @ddt.data(
+        (
+            '<transcript language="ur" src="" />',
+            'There is no transcript file associated with the Urdu language.'
+        ),
+        (
+            '<transcript language="eo" src="" /><transcript language="ur" src="" />',
+            'There are no transcript files associated with the Esperanto, Urdu languages.'
+        ),
+    )
+    @ddt.unpack
+    @override_settings(ALL_LANGUAGES=ALL_LANGUAGES)
+    def test_no_transcript_validation_message(self, xml_transcripts, expected_validation_msg):
+        """
+        Test the validation message when no associated transcript file uploaded.
+        """
+        xml_data_transcripts = '''
+            <video display_name="Test Video"
+                   youtube="1.0:p2Q6BrNhdh8,0.75:izygArpw-Qo,1.25:1EeWXzPdhSA,1.5:rABDYkeK0x8"
+                   show_captions="false"
+                   download_track="false"
+                   start_time="00:00:01"
+                   download_video="false"
+                   end_time="00:01:00">
+              <source src="http://www.example.com/source.mp4"/>
+              <track src="http://www.example.com/track"/>
+              <handout src="http://www.example.com/handout"/>
+              {xml_transcripts}
+            </video>
+        '''.format(xml_transcripts=xml_transcripts)
+        descriptor = instantiate_descriptor(data=xml_data_transcripts)
+        validation = descriptor.validate()
+        self.assert_validation_message(validation, expected_validation_msg)
+
+    def test_video_transcript_none(self):
+        """
+        Test video when transcripts is None.
+        """
+        descriptor = instantiate_descriptor(data=None)
+        descriptor.transcripts = None
+        response = descriptor.get_transcripts_info()
+        expected = {'transcripts': {}, 'sub': ''}
+        self.assertEquals(expected, response)
