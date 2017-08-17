@@ -7,7 +7,6 @@ import json
 from datetime import datetime, timedelta
 
 import ddt
-from flaky import flaky
 from nose.plugins.attrib import attr
 
 from ...fixtures.course import CourseFixture, XBlockFixtureDesc
@@ -238,32 +237,6 @@ class ProctoredExamTest(UniqueCourseTest):
         self.studio_course_outline.open_subsection_settings_dialog()
         self.assertTrue(self.studio_course_outline.proctoring_items_are_displayed())
 
-    def test_proctored_exam_flow(self):
-        """
-        Given that I am a staff member on the exam settings section
-        select advanced settings tab
-        When I Make the exam proctored.
-        And I login as a verified student.
-        And I verify the user's ID.
-        And visit the courseware as a verified student.
-        Then I can see an option to take the exam as a proctored exam.
-        """
-        LogoutPage(self.browser).visit()
-        auto_auth(self.browser, "STAFF_TESTER", "staff101@example.com", True, self.course_id)
-        self.studio_course_outline.visit()
-        self.studio_course_outline.open_subsection_settings_dialog()
-
-        self.studio_course_outline.select_advanced_tab()
-        self.studio_course_outline.make_exam_proctored()
-
-        LogoutPage(self.browser).visit()
-        self._login_as_a_verified_user()
-
-        self._verify_user()
-
-        self.courseware_page.visit()
-        self.assertTrue(self.courseware_page.can_start_proctored_exam)
-
     def _setup_and_take_timed_exam(self, hide_after_due=False):
         """
         Helper to perform the common action "set up a timed exam as staff,
@@ -440,7 +413,6 @@ class CoursewareMultipleVerticalsTest(CoursewareMultipleVerticalsTestBase):
     Test courseware with multiple verticals
     """
 
-    @flaky  # PLAT-1198; should be fixed, but verify that failures stop before removing
     def test_navigation_buttons(self):
         self.courseware_page.visit()
 

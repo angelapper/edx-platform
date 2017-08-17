@@ -5,13 +5,12 @@ import logging
 import urlparse
 from datetime import datetime
 
-import pytz
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
-from django.core.urlresolvers import resolve, reverse
-from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest, HttpResponseForbidden
+from django.core.urlresolvers import reverse
+from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden
 from django.shortcuts import redirect
 from django.utils.translation import ugettext as _
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -20,7 +19,7 @@ from django_countries import countries
 
 import third_party_auth
 from commerce.models import CommerceConfiguration
-from edxmako.shortcuts import render_to_response, render_to_string
+from edxmako.shortcuts import render_to_response
 from lms.djangoapps.commerce.utils import EcommerceService
 from openedx.core.djangoapps.commerce.utils import ecommerce_api_client
 from openedx.core.djangoapps.external_auth.login_and_register import login as external_auth_login
@@ -30,6 +29,11 @@ from openedx.core.djangoapps.programs.models import ProgramsApiConfig
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
 from openedx.core.djangoapps.theming.helpers import is_request_in_themed_site
 from openedx.core.djangoapps.user_api.accounts.api import request_password_change
+from openedx.core.djangoapps.user_api.api import (
+    RegistrationFormFactory,
+    get_login_session_form,
+    get_password_reset_form
+)
 from openedx.core.djangoapps.user_api.errors import UserNotFound
 from openedx.core.lib.edx_api_utils import get_edx_api_data
 from openedx.core.lib.time_zone_utils import TIME_ZONE_CHOICES
@@ -259,23 +263,17 @@ def enterprise_sidebar_context(request):
 
     platform_name = configuration_helpers.get_value('PLATFORM_NAME', settings.PLATFORM_NAME)
 
-    if enterprise_customer.branding_configuration.logo:
-        enterprise_logo_url = enterprise_customer.branding_configuration.logo.url
-    else:
-        enterprise_logo_url = ''
+    logo_url = enterprise_customer.get('branding_configuration', {}).get('logo', '')
 
-    if getattr(enterprise_customer.branding_configuration, 'welcome_message', None):
-        branded_welcome_template = enterprise_customer.branding_configuration.welcome_message
-    else:
-        branded_welcome_template = configuration_helpers.get_value(
-            'ENTERPRISE_SPECIFIC_BRANDED_WELCOME_TEMPLATE',
-            settings.ENTERPRISE_SPECIFIC_BRANDED_WELCOME_TEMPLATE
-        )
+    branded_welcome_template = configuration_helpers.get_value(
+        'ENTERPRISE_SPECIFIC_BRANDED_WELCOME_TEMPLATE',
+        settings.ENTERPRISE_SPECIFIC_BRANDED_WELCOME_TEMPLATE
+    )
 
     branded_welcome_string = branded_welcome_template.format(
         start_bold=u'<b>',
         end_bold=u'</b>',
-        enterprise_name=enterprise_customer.name,
+        enterprise_name=enterprise_customer['name'],
         platform_name=platform_name
     )
 
@@ -286,8 +284,8 @@ def enterprise_sidebar_context(request):
     platform_welcome_string = platform_welcome_template.format(platform_name=platform_name)
 
     context = {
-        'enterprise_name': enterprise_customer.name,
-        'enterprise_logo_url': enterprise_logo_url,
+        'enterprise_name': enterprise_customer['name'],
+        'enterprise_logo_url': logo_url,
         'enterprise_branded_welcome_string': branded_welcome_string,
         'platform_welcome_string': platform_welcome_string,
     }
@@ -385,41 +383,12 @@ def _get_form_descriptions(request):
             values are the JSON-serialized form descriptions.
 
     """
+
     return {
-        'login': _local_server_get('/user_api/v1/account/login_session/', request.session),
-        'registration': _local_server_get('/user_api/v1/account/registration/', request.session),
-        'password_reset': _local_server_get('/user_api/v1/account/password_reset/', request.session)
+        'password_reset': get_password_reset_form().to_json(),
+        'login': get_login_session_form().to_json(),
+        'registration': RegistrationFormFactory().get_registration_form(request).to_json()
     }
-
-
-def _local_server_get(url, session):
-    """Simulate a server-server GET request for an in-process API.
-
-    Arguments:
-        url (str): The URL of the request (excluding the protocol and domain)
-        session (SessionStore): The session of the original request,
-            used to get past the CSRF checks.
-
-    Returns:
-        str: The content of the response
-
-    """
-    # Since the user API is currently run in-process,
-    # we simulate the server-server API call by constructing
-    # our own request object.  We don't need to include much
-    # information in the request except for the session
-    # (to get past through CSRF validation)
-    request = HttpRequest()
-    request.method = "GET"
-    request.session = session
-
-    # Call the Django view function, simulating
-    # the server-server API call
-    view, args, kwargs = resolve(url)
-    response = view(request, *args, **kwargs)
-
-    # Return the content of the response
-    return response.content
 
 
 def _external_auth_intercept(request, mode):

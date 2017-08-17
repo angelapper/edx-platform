@@ -40,7 +40,6 @@ from django.views.generic import TemplateView
 from ipware.ip import get_ip
 from opaque_keys import InvalidKeyError
 from opaque_keys.edx.keys import CourseKey
-from opaque_keys.edx.locations import SlashSeparatedCourseKey
 from opaque_keys.edx.locator import CourseLocator
 from provider.oauth2.models import Client
 from pytz import UTC
@@ -789,14 +788,6 @@ def dashboard(request):
     statuses = ["approved", "denied", "pending", "must_reverify"]
     reverifications = reverification_info(statuses)
 
-    user_already_has_certs_for = GeneratedCertificate.course_ids_with_certs_for_user(request.user)
-    show_refund_option_for = frozenset(
-        enrollment.course_id for enrollment in course_enrollments
-        if enrollment.refundable(
-            user_already_has_certs_for=user_already_has_certs_for
-        )
-    )
-
     block_courses = frozenset(
         enrollment.course_id for enrollment in course_enrollments
         if is_course_blocked(
@@ -862,7 +853,6 @@ def dashboard(request):
         'verification_status': verification_status,
         'verification_status_by_course': verify_status_by_course,
         'verification_errors': verification_errors,
-        'show_refund_option_for': show_refund_option_for,
         'block_courses': block_courses,
         'denied_banner': denied_banner,
         'billing_email': settings.PAYMENT_SUPPORT_EMAIL,
@@ -891,6 +881,35 @@ def dashboard(request):
     response = render_to_response('dashboard.html', context)
     set_user_info_cookie(response, request)
     return response
+
+
+@login_required
+def course_run_refund_status(request, course_id):
+    """
+    Get Refundable status for a course.
+
+    Arguments:
+        request: The request object.
+        course_id (str): The unique identifier for the course.
+
+    Returns:
+        Json response.
+
+    """
+
+    try:
+        course_key = CourseKey.from_string(course_id)
+        course_enrollment = CourseEnrollment.get_enrollment(request.user, course_key)
+
+    except InvalidKeyError:
+        logging.exception("The course key used to get refund status caused InvalidKeyError during look up.")
+
+        return JsonResponse({'course_refundable_status': ''}, status=406)
+
+    refundable_status = course_enrollment.refundable()
+    logging.info("Course refund status for course {0} is {1}".format(course_id, refundable_status))
+
+    return JsonResponse({'course_refundable_status': refundable_status}, status=200)
 
 
 def get_verification_error_reasons_for_display(verification_error_codes):
@@ -933,20 +952,32 @@ def _create_recent_enrollment_message(course_enrollments, course_modes):  # pyli
     recently_enrolled_courses = _get_recently_enrolled_courses(course_enrollments)
 
     if recently_enrolled_courses:
-        enroll_messages = [
-            {
-                "course_id": enrollment.course_overview.id,
-                "course_name": enrollment.course_overview.display_name,
-                "allow_donation": _allow_donation(course_modes, enrollment.course_overview.id, enrollment)
-            }
+        enrollments_count = len(recently_enrolled_courses)
+        course_name_separator = ', '
+        # If length of enrolled course 2, join names with 'and'
+        if enrollments_count == 2:
+            course_name_separator = _(' and ')
+
+        course_names = course_name_separator.join(
+            [enrollment.course_overview.display_name for enrollment in recently_enrolled_courses]
+        )
+
+        allow_donations = any(
+            _allow_donation(course_modes, enrollment.course_overview.id, enrollment)
             for enrollment in recently_enrolled_courses
-        ]
+        )
 
         platform_name = configuration_helpers.get_value('platform_name', settings.PLATFORM_NAME)
 
         return render_to_string(
             'enrollment/course_enrollment_message.html',
-            {'course_enrollment_messages': enroll_messages, 'platform_name': platform_name}
+            {
+                'course_names': course_names,
+                'enrollments_count': enrollments_count,
+                'allow_donations': allow_donations,
+                'platform_name': platform_name,
+                'course_id': recently_enrolled_courses[0].course_overview.id if enrollments_count == 1 else None
+            }
         )
 
 
@@ -1193,7 +1224,7 @@ def change_enrollment(request, check_access=True):
         return HttpResponseBadRequest(_("Course id not specified"))
 
     try:
-        course_id = SlashSeparatedCourseKey.from_deprecated_string(request.POST.get("course_id"))
+        course_id = CourseKey.from_string(request.POST.get("course_id"))
     except InvalidKeyError:
         log.warning(
             u"User %s tried to %s with invalid course id: %s",
@@ -2819,7 +2850,7 @@ def change_email_settings(request):
     user = request.user
 
     course_id = request.POST.get("course_id")
-    course_key = SlashSeparatedCourseKey.from_deprecated_string(course_id)
+    course_key = CourseKey.from_string(course_id)
     receive_emails = request.POST.get("receive_emails")
     if receive_emails:
         optout_object = Optout.objects.filter(user=user, course_id=course_key)

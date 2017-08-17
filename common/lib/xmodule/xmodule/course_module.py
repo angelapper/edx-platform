@@ -1065,7 +1065,8 @@ class CourseDescriptor(CourseFields, SequenceDescriptor, LicenseMixin):
         return course_metadata_utils.may_certify_for_course(
             self.certificates_display_behavior,
             self.certificates_show_before_end,
-            self.has_ended()
+            self.has_ended(),
+            self.certificate_available_date
         )
 
     def has_started(self):
@@ -1451,4 +1452,13 @@ class CourseSummary(object):
         """
         Returns whether the course has ended.
         """
-        return course_metadata_utils.has_course_ended(self.end)
+        try:
+            return course_metadata_utils.has_course_ended(self.end)
+        except TypeError as e:
+            log.warning(
+                "Course '{course_id}' has an improperly formatted end date '{end_date}'. Error: '{err}'.".format(
+                    course_id=unicode(self.id), end_date=self.end, err=e
+                )
+            )
+            modified_end = self.end.replace(tzinfo=utc)
+            return course_metadata_utils.has_course_ended(modified_end)
