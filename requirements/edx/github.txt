@@ -68,7 +68,7 @@ git+https://github.com/hmarr/django-debug-toolbar-mongo.git@b0686a76f1ce3532088c
 git+https://github.com/edx/rfc6266.git@v0.0.5-edx#egg=rfc6266==0.0.5-edx
 
 # Used for testing
-git+https://github.com/edx/lettuce.git@0.2.20.002#egg=lettuce==0.2.20.002
+git+https://github.com/edx/lettuce.git@31b0dfd865766243e9b563ec65fae9122edf7975#egg=lettuce==0.2.23+edx.1
 
 # Why a DRF fork? See: https://openedx.atlassian.net/browse/PLAT-1581
 git+https://github.com/edx/django-rest-framework.git@1ceda7c086fddffd1c440cc86856441bbf0bd9cb#egg=djangorestframework==3.6.3
@@ -85,7 +85,7 @@ git+https://github.com/edx/django-celery.git@f87c6f914a1410463f54aebf68458c0653b
 -e git+https://github.com/edx/codejail.git@a320d43ce6b9c93b17636b2491f724d9e433be47#egg=codejail==0.0
 -e git+https://github.com/edx/django-splash.git@v0.2#egg=django-splash==0.2
 -e git+https://github.com/edx/acid-block.git@e46f9cda8a03e121a00c7e347084d142d22ebfb7#egg=acid-xblock
-git+https://github.com/edx/edx-ora2.git@2.0.1#egg=ora2==2.0.1
+git+https://github.com/edx/edx-ora2.git@2.1.1#egg=ora2==2.1.1
 git+https://github.com/edx/ease.git@release-2015-07-14#egg=ease==0.1.3
 git+https://github.com/edx/RecommenderXBlock.git@0e744b393cf1f8b886fe77bc697e7d9d78d65cd6#egg=recommender-xblock==1.2
 git+https://github.com/solashirai/crowdsourcehinter.git@518605f0a95190949fe77bd39158450639e2e1dc#egg=crowdsourcehinter-xblock==0.1
@@ -96,7 +96,8 @@ git+https://github.com/edx/xblock-utils.git@v1.0.5#egg=xblock-utils==1.0.5
 -e git+https://github.com/edx-solutions/xblock-google-drive.git@138e6fa0bf3a2013e904a085b9fed77dab7f3f21#egg=xblock-google-drive
 git+https://github.com/edx/edx-user-state-client.git@1.0.1#egg=edx-user-state-client==1.0.1
 git+https://github.com/edx/xblock-lti-consumer.git@v1.1.5#egg=lti_consumer-xblock==1.1.5
-git+https://github.com/edx/edx-proctoring.git@1.1.0#egg=edx-proctoring==1.1.0
+git+https://github.com/edx/edx-proctoring.git@1.2.0#egg=edx-proctoring==1.2.0
+git+https://github.com/edx/edx-ace.git@v0.1.1#egg=edx-ace==0.1.1
 
 # Third Party XBlocks
 git+https://github.com/open-craft/xblock-poll@7ba819b968fe8faddb78bb22e1fe7637005eb414#egg=xblock-poll==1.2.7

@@ -81,6 +81,12 @@ define(
                 });
 
                 var sectionOneFieldViews = [
+                    new LearnerProfileFields.SocialLinkIconsView({
+                        model: accountSettingsModel,
+                        socialPlatforms: Helpers.SOCIAL_PLATFORMS,
+                        ownProfile: true
+                    }),
+
                     new FieldViews.DropdownFieldView({
                         title: gettext('Location'),
                         model: accountSettingsModel,
@@ -102,6 +108,12 @@ define(
                         placeholderValue: 'Add language',
                         valueAttribute: 'language_proficiencies',
                         options: Helpers.FIELD_OPTIONS,
+                        helpMessage: ''
+                    }),
+
+                    new FieldViews.DateFieldView({
+                        model: accountSettingsModel,
+                        valueAttribute: 'date_joined',
                         helpMessage: ''
                     })
                 ];

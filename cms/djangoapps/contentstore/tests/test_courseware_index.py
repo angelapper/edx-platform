@@ -8,6 +8,7 @@ from unittest import skip
 from uuid import uuid4
 
 import ddt
+import pytest
 from dateutil.tz import tzutc
 from django.conf import settings
 from lazy.lazy import lazy
@@ -181,6 +182,7 @@ class MixedWithOptionsTestCase(MixedSplitTestCase):
             store.update_item(item, ModuleStoreEnum.UserID.test)
 
 
+@pytest.mark.django_db
 @ddt.ddt
 class TestCoursewareSearchIndexer(MixedWithOptionsTestCase):
     """ Tests the operation of the CoursewareSearchIndexer """
@@ -739,6 +741,12 @@ class TestTaskExecution(SharedModuleStoreTestCase):
             display_name="Html Content 2",
             publish_item=False,
         )
+
+    @classmethod
+    def tearDownClass(cls):
+        SignalHandler.course_published.connect(listen_for_course_publish)
+        SignalHandler.library_updated.connect(listen_for_library_update)
+        super(TestTaskExecution, cls).tearDownClass()
 
     def test_task_indexing_course(self):
         """ Making sure that the receiver correctly fires off the task when invoked by signal """

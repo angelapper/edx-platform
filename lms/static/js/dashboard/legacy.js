@@ -120,7 +120,7 @@
              var user = $(event.target).closest('.action-upgrade').data('user'),
                  course = $(event.target).closest('.action-upgrade').data('course-id');
 
-             Logger.log('edx.course.enrollment.upgrade.clicked', [user, course], null);
+             Logger.log('edx.course.enrollment.upgrade.clicked', [user, course], {location: 'learner_dashboard'});
          });
 
          $('.action-email-settings').click(function(event) {
@@ -175,7 +175,6 @@
 
                      $('#unenroll_form input[type="submit"]').prop('disabled', true);
                  }
-                 edx.dashboard.dropdown.toggleCourseActionsDropdownMenu(event);
              });
              request.fail(function() {
                  $('#unenroll_error').text(
@@ -185,23 +184,10 @@
                   .css('display', 'block');
 
                  $('#unenroll_form input[type="submit"]').prop('disabled', true);
-
-                 edx.dashboard.dropdown.toggleCourseActionsDropdownMenu(event);
              });
-         });
 
-         $('#unenroll_form').on('ajax:complete', function(event, xhr) {
-             if (xhr.status === 200) {
-                 location.href = urls.dashboard;
-             } else if (xhr.status === 403) {
-                 location.href = urls.signInUser + '?course_id=' +
-                encodeURIComponent($('#unenroll_course_id').val()) + '&enrollment_action=unenroll';
-             } else {
-                 $('#unenroll_error').text(
-                    xhr.responseText ? xhr.responseText : gettext('An error occurred. Please try again later.')
-                ).stop()
-                     .css('display', 'block');
-             }
+             edx.dashboard.dropdown.toggleCourseActionsDropdownMenu(event);
+             $('#unenroll-modal').css('position', 'fixed');
          });
 
          $('#email_settings_form').submit(function() {
@@ -236,7 +222,8 @@
          });
 
          $('.action-unenroll').each(function(index) {
-            // a bit of a hack, but gets the unique selector for the modal trigger
+             $(this).attr('id', 'unenroll-' + index);
+             // a bit of a hack, but gets the unique selector for the modal trigger
              var trigger = '#' + $(this).attr('id');
              accessibleModal(
                 trigger,
@@ -244,7 +231,6 @@
                 '#unenroll-modal',
                 '#dashboard-main'
              );
-             $(this).attr('id', 'unenroll-' + index);
          });
 
          $('#unregister_block_course').click(function(event) {

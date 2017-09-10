@@ -103,6 +103,24 @@
             });
 
             sectionOneFieldViews = [
+                new LearnerProfileFieldsView.SocialLinkIconsView({
+                    model: accountSettingsModel,
+                    socialPlatforms: options.social_platforms,
+                    ownProfile: options.own_profile
+                }),
+
+                new FieldsView.DateFieldView({
+                    title: gettext('Joined'),
+                    titleVisible: true,
+                    model: accountSettingsModel,
+                    screenReaderTitle: gettext('Joined Date'),
+                    valueAttribute: 'date_joined',
+                    helpMessage: '',
+                    userLanguage: accountSettingsModel.get('language'),
+                    userTimezone: accountPreferencesModel.get('time_zone'),
+                    dateFormat: 'MMMM YYYY'  // not localized, but hopefully ok.
+                }),
+
                 new FieldsView.DropdownFieldView({
                     title: gettext('Location'),
                     titleVisible: true,

@@ -7,10 +7,13 @@ from urllib import urlencode
 from uuid import uuid4
 
 import ddt
+import datetime
 from django.conf import settings
 from django.core.urlresolvers import reverse
 from django.test.client import Client, RequestFactory
 from django.test.utils import override_settings
+from util.date_utils import strftime_localized
+from django.utils.translation import ugettext as _
 from mock import patch
 from nose.plugins.attrib import attr
 
@@ -36,6 +39,7 @@ from lms.djangoapps.badges.tests.factories import (
     CourseCompleteImageConfigurationFactory
 )
 from lms.djangoapps.grades.tests.utils import mock_passing_grade
+from openedx.core.djangoapps.certificates.config import waffle
 from openedx.core.lib.tests.assertions.events import assert_event_matches
 from student.roles import CourseStaffRole
 from student.tests.factories import CourseEnrollmentFactory, UserFactory
@@ -73,7 +77,10 @@ class CommonCertificatesTestCase(ModuleStoreTestCase):
         super(CommonCertificatesTestCase, self).setUp()
         self.client = Client()
         self.course = CourseFactory.create(
-            org='testorg', number='run1', display_name='refundable course'
+            org='testorg',
+            number='run1',
+            display_name='refundable course',
+            certificate_available_date=datetime.datetime.today() - datetime.timedelta(days=1),
         )
         self.course_id = self.course.location.course_key
         self.user = UserFactory.create(
@@ -787,6 +794,41 @@ class CertificatesViewsTests(CommonCertificatesTestCase):
         self.assertNotIn(self.course.display_name.encode('utf-8'), response.content)
         self.assertIn('course_title_0', response.content)
         self.assertIn('Signatory_Title 0', response.content)
+
+    @override_settings(FEATURES=FEATURES_WITH_CERTS_ENABLED)
+    @ddt.data(
+        (datetime.datetime.now() - datetime.timedelta(days=1), True),
+        (datetime.datetime.today() - datetime.timedelta(days=1), False),
+        (datetime.datetime.today() + datetime.timedelta(days=10), False)
+    )
+    @ddt.unpack
+    def test_html_view_certificate_availability_date_for_instructor_paced_courses(self, cert_avail_date, is_self_paced):
+        """
+        test certificate web view should display the certificate availability date
+        as the issued date for instructor-paced courses
+        """
+        self.course.self_paced = is_self_paced
+        self.course.certificate_available_date = cert_avail_date
+        self.course.save()
+        self._add_course_certificates(count=1, signatory_count=1, is_active=True)
+        test_url = get_certificate_url(
+            user_id=self.user.id,
+            course_id=unicode(self.course.id)
+        )
+
+        if is_self_paced or cert_avail_date > datetime.datetime.today():
+            expected_date = datetime.datetime.today()
+        else:
+            expected_date = self.course.certificate_available_date
+        with waffle.waffle().override(waffle.SELF_PACED_ONLY, active=True):
+            with waffle.waffle().override(waffle.INSTRUCTOR_PACED_ONLY, active=True):
+                response = self.client.get(test_url)
+        date = '{month} {day}, {year}'.format(
+            month=strftime_localized(expected_date, "%B"),
+            day=expected_date.day,
+            year=expected_date.year
+        )
+        self.assertIn(date, response.content)
 
     @override_settings(FEATURES=FEATURES_WITH_CERTS_ENABLED)
     def test_render_html_view_invalid_certificate_configuration(self):

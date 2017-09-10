@@ -62,7 +62,7 @@ CELERY_RESULT_BACKEND = 'djcelery.backends.cache:CacheBackend'
 
 # When the broker is behind an ELB, use a heartbeat to refresh the
 # connection and to detect if it has been dropped.
-BROKER_HEARTBEAT = 10.0
+BROKER_HEARTBEAT = 60.0
 BROKER_HEARTBEAT_CHECKRATE = 2
 
 # Each worker should only fetch one message at a time
@@ -246,9 +246,9 @@ LOGGING = get_logger_config(LOG_DIR,
                             service_variant=SERVICE_VARIANT)
 
 #theming start:
-PLATFORM_NAME = ENV_TOKENS.get('PLATFORM_NAME', 'edX')
-STUDIO_NAME = ENV_TOKENS.get('STUDIO_NAME', 'edX Studio')
-STUDIO_SHORT_NAME = ENV_TOKENS.get('STUDIO_SHORT_NAME', 'Studio')
+PLATFORM_NAME = ENV_TOKENS.get('PLATFORM_NAME', PLATFORM_NAME)
+STUDIO_NAME = ENV_TOKENS.get('STUDIO_NAME', STUDIO_NAME)
+STUDIO_SHORT_NAME = ENV_TOKENS.get('STUDIO_SHORT_NAME', STUDIO_SHORT_NAME)
 
 # Event Tracking
 if "TRACKING_IGNORE_URL_PATTERNS" in ENV_TOKENS:

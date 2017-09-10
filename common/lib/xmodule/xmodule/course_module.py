@@ -732,7 +732,8 @@ class CourseFields(object):
             'For example, to specify that teams should have a maximum of 5 participants and provide a list of '
             '2 topics, enter the configuration in this format: {example_format}. '
             'In "id" values, the only supported special characters are underscore, hyphen, and period.'
-        ).format(
+        ),
+        help_format_args=dict(
             # Put the sample JSON into a format variable so that translators
             # don't muck with it.
             example_format=(
@@ -1066,7 +1067,8 @@ class CourseDescriptor(CourseFields, SequenceDescriptor, LicenseMixin):
             self.certificates_display_behavior,
             self.certificates_show_before_end,
             self.has_ended(),
-            self.certificate_available_date
+            self.certificate_available_date,
+            self.self_paced
         )
 
     def has_started(self):

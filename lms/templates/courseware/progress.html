@@ -56,10 +56,9 @@ from django.utils.http import urlquote_plus
                     ${_("Course Progress for Student '{username}' ({email})").format(username=student.username, email=student.email)}
                 </h2>
 
-                %if certificate_data:
                 <div class="wrapper-msg wrapper-auto-cert">
                     <div id="errors-info" class="errors-info"></div>
-                    %if passed:
+                    %if certificate_data:
                     <div class="auto-cert-message" id="course-success">
                         <div class="has-actions">
                             <% post_url = reverse('generate_user_cert', args=[unicode(course.id)]) %>
@@ -67,7 +66,6 @@ from django.utils.http import urlquote_plus
                                 <h4 class="hd hd-4 title">${certificate_data.title}</h4>
                                 <p class="copy">${certificate_data.msg}</p>
                             </div>
-                            %if certificate_data.may_view_certificate:
                             <div class="msg-actions">
                                 %if certificate_data.cert_web_view_url:
                                 <a class="btn" href="${certificate_data.cert_web_view_url}" target="_blank">${_("View Certificate")} <span class="sr">${_("Opens in a new browser window")}</span></a>
@@ -77,12 +75,10 @@ from django.utils.http import urlquote_plus
                                 <button class="btn generate_certs" data-endpoint="${post_url}" id="btn_generate_cert">${_('Request Certificate')}</button>
                                 %endif
                             </div>
-                            %endif
                         </div>
                     </div>
                     %endif
                 </div>
-                %endif
 
                 %if not course.disable_progress_graph:
                 <div class="grade-detail-graph" id="grade-detail-graph"></div>
@@ -185,18 +181,15 @@ from django.utils.http import urlquote_plus
                                                 <em class="localized-datetime" data-datetime="${section.due}" data-string="${_('due {date}')}" data-timezone="${user_timezone}" data-language="${user_language}"></em>
                                             %endif
                                         </p>
-                                        <%doc>
-                                            EDUCATOR-1127: Do not display override notice until override is enabled
+                                        <p class="override-notice">
                                             %if section.override is not None:
-                                                <p class="override-notice">
-                                                    %if section.format is not None and section.format == "Exam":
-                                                        ${_("Exam grade has been overridden due to a failed proctoring review.")}
-                                                    %else:
-                                                        ${_("Section grade has been overridden.")}
-                                                    %endif
-                                                </p>
+                                                %if section.format is not None and section.format == "Exam":
+                                                    ${_("Suspicious activity detected during proctored exam review. Exam score 0.")}
+                                                %else:
+                                                    ${_("Section grade has been overridden.")}
+                                                %endif
                                             %endif
-                                        </%doc>
+                                        </p>
                                         %if len(section.problem_scores.values()) > 0:
                                           %if section.show_grades(staff_access):
                                           <dl class="scores">

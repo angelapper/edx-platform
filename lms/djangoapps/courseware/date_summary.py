@@ -16,7 +16,7 @@ from pytz import timezone, utc
 from course_modes.models import CourseMode
 from lms.djangoapps.commerce.utils import EcommerceService
 from lms.djangoapps.verify_student.models import SoftwareSecurePhotoVerification, VerificationDeadline
-from openedx.core.djangoapps.certificates.config import waffle
+from openedx.core.djangoapps.certificates.api import can_show_certificate_available_date_field
 from student.models import CourseEnrollment
 
 
@@ -198,15 +198,25 @@ class CourseEndDate(DateSummary):
 
 class CertificateAvailableDate(DateSummary):
     """
-        Displays the end date of the course.
-        """
+    Displays the certificate available date of the course.
+    """
     css_class = 'certificate-available-date'
     title = ugettext_lazy('Certificate Available')
 
     @property
+    def active_certificates(self):
+        return [
+            certificate for certificate in self.course.certificates.get('certificates', [])
+            if certificate.get('is_active', False)
+        ]
+
+    @property
     def is_enabled(self):
-        return self.date is not None and datetime.datetime.now(utc) <= self.date and waffle.waffle().is_enabled(
-            waffle.INSTRUCTOR_PACED_ONLY
+        return (
+            can_show_certificate_available_date_field(self.course) and
+            self.date is not None and
+            datetime.datetime.now(utc) <= self.date and
+            len(self.active_certificates) > 0
         )
 
     @property

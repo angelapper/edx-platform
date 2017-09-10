@@ -30,6 +30,7 @@ from email_marketing.tasks import (
     get_email_cookies_via_sailthru
 )
 from openedx.core.djangoapps.lang_pref import LANGUAGE_KEY
+from student.models import Registration
 from student.tests.factories import UserFactory, UserProfileFactory
 from util.json_request import JsonResponse
 
@@ -70,9 +71,8 @@ class EmailMarketingTests(TestCase):
         update_email_marketing_config(enabled=False)
         self.request_factory = RequestFactory()
         self.user = UserFactory.create(username='test', email=TEST_EMAIL)
-        self.profile = self.user.profile
-        self.profile.year_of_birth = 1980
-        self.profile.save()
+        self.registration = Registration()
+        self.registration.register(self.user)
 
         self.request = self.request_factory.get("foo")
         update_email_marketing_config(enabled=True)
@@ -191,6 +191,23 @@ class EmailMarketingTests(TestCase):
         self.assertEquals(userparms['template'], "Welcome")
         self.assertEquals(userparms['schedule_time'], expected_schedule.strftime('%Y-%m-%dT%H:%M:%SZ'))
 
+    @patch('email_marketing.tasks.log.error')
+    @patch('email_marketing.tasks.SailthruClient.api_post')
+    @patch('email_marketing.tasks.SailthruClient.api_get')
+    def test_email_not_sent_to_white_label(self, mock_sailthru_get, mock_sailthru_post, mock_log_error):
+        """
+        tests that welcome email is not sent to the white-label site learner
+        """
+        white_label_site = Site.objects.create(domain='testwhitelabel.com', name='White Label')
+        site_dict = {'id': white_label_site.id, 'domain': white_label_site.domain, 'name': white_label_site.name}
+        mock_sailthru_post.return_value = SailthruResponse(JsonResponse({'ok': True}))
+        mock_sailthru_get.return_value = SailthruResponse(JsonResponse({'lists': [{'name': 'new list'}], 'ok': True}))
+        update_user.delay(
+            {'gender': 'm', 'username': 'test', 'activated': 1}, TEST_EMAIL, site_dict, new_user=True
+        )
+        self.assertFalse(mock_log_error.called)
+        self.assertNotEqual(mock_sailthru_post.call_args[0][0], "send")
+
     @patch('email_marketing.tasks.SailthruClient.api_post')
     @patch('email_marketing.tasks.SailthruClient.api_get')
     def test_add_user_list_existing_domain(self, mock_sailthru_get, mock_sailthru_post):
@@ -308,14 +325,14 @@ class EmailMarketingTests(TestCase):
         add_email_marketing_cookies(None)
         self.assertFalse(mock_log_error.called)
 
-        email_marketing_register_user(None)
+        email_marketing_register_user(None, None, None)
         self.assertFalse(mock_log_error.called)
 
         update_email_marketing_config(enabled=True)
 
         # test anonymous users
         anon = AnonymousUser()
-        email_marketing_register_user(None, user=anon)
+        email_marketing_register_user(None, anon, None)
         self.assertFalse(mock_log_error.called)
 
         email_marketing_user_field_changed(None, user=anon)
@@ -443,19 +460,21 @@ class EmailMarketingTests(TestCase):
     @patch('lms.djangoapps.email_marketing.tasks.update_user.delay')
     def test_register_user(self, mock_update_user, mock_get_current_request):
         """
-        make sure register user call invokes update_user
+        make sure register user call invokes update_user and includes activation_key
         """
         mock_get_current_request.return_value = self.request
-        email_marketing_register_user(None, user=self.user, profile=self.profile)
+        email_marketing_register_user(None, user=self.user, registration=self.registration)
         self.assertTrue(mock_update_user.called)
+        self.assertEqual(mock_update_user.call_args[0][0]['activation_key'], self.registration.activation_key)
 
     @patch('lms.djangoapps.email_marketing.tasks.update_user.delay')
     def test_register_user_no_request(self, mock_update_user):
         """
-        make sure register user call invokes update_user
+        make sure register user call invokes update_user and includes activation_key
         """
-        email_marketing_register_user(None, user=self.user, profile=self.profile)
+        email_marketing_register_user(None, user=self.user, registration=self.registration)
         self.assertTrue(mock_update_user.called)
+        self.assertEqual(mock_update_user.call_args[0][0]['activation_key'], self.registration.activation_key)
 
     @patch('lms.djangoapps.email_marketing.tasks.update_user.delay')
     def test_register_user_language_preference(self, mock_update_user):
@@ -464,12 +483,12 @@ class EmailMarketingTests(TestCase):
         """
         # If the user hasn't set an explicit language preference, we should send the application's default.
         self.assertIsNone(self.user.preferences.model.get_value(self.user, LANGUAGE_KEY))
-        email_marketing_register_user(None, user=self.user, profile=self.profile)
+        email_marketing_register_user(None, user=self.user, registration=self.registration)
         self.assertEqual(mock_update_user.call_args[0][0]['ui_lang'], settings.LANGUAGE_CODE)
 
         # If the user has set an explicit language preference, we should send it.
         self.user.preferences.create(key=LANGUAGE_KEY, value='es-419')
-        email_marketing_register_user(None, user=self.user, profile=self.profile)
+        email_marketing_register_user(None, user=self.user, registration=self.registration)
         self.assertEqual(mock_update_user.call_args[0][0]['ui_lang'], 'es-419')
 
     @patch('email_marketing.signals.crum.get_current_request')

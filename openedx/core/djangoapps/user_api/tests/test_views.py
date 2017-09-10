@@ -22,6 +22,7 @@ from django_comment_common import models
 from openedx.core.djangoapps.site_configuration.helpers import get_value
 from openedx.core.lib.api.test_utils import ApiTestCase, TEST_API_KEY
 from openedx.core.lib.time_zone_utils import get_display_time_zone
+from openedx.core.djangoapps.site_configuration.tests.test_util import with_site_configuration
 from openedx.core.djangolib.testing.utils import CacheIsolationTestCase, skip_unless_lms
 from student.tests.factories import UserFactory
 from third_party_auth.tests.testutil import simulate_running_pipeline, ThirdPartyAuthTestMixin
@@ -923,6 +924,52 @@ class RegistrationViewTest(ThirdPartyAuthTestMixin, UserAPITestCase):
     CITY = "Springfield"
     COUNTRY = "us"
     GOALS = "Learn all the things!"
+    PROFESSION_OPTIONS = [
+        {
+            "name": u'--',
+            "value": u'',
+            "default": True
+
+        },
+        {
+            "value": u'software engineer',
+            "name": u'Software Engineer',
+            "default": False
+        },
+        {
+            "value": u'teacher',
+            "name": u'Teacher',
+            "default": False
+        },
+        {
+            "value": u'other',
+            "name": u'Other',
+            "default": False
+        }
+    ]
+    SPECIALTY_OPTIONS = [
+        {
+            "name": u'--',
+            "value": u'',
+            "default": True
+
+        },
+        {
+            "value": "aerospace",
+            "name": "Aerospace",
+            "default": False
+        },
+        {
+            "value": u'early education',
+            "name": u'Early Education',
+            "default": False
+        },
+        {
+            "value": u'n/a',
+            "name": u'N/A',
+            "default": False
+        }
+    ]
 
     def setUp(self):
         super(RegistrationViewTest, self).setUp()
@@ -1070,14 +1117,19 @@ class RegistrationViewTest(ThirdPartyAuthTestMixin, UserAPITestCase):
         )
 
     @ddt.data(
-        ('pk', 'PK'),
-        ('Pk', 'PK'),
-        ('pK', 'PK'),
-        ('PK', 'PK'),
-        ('us', 'US'),
+        ('pk', 'PK', 'Bob123', 'Bob123'),
+        ('Pk', 'PK', None, ''),
+        ('pK', 'PK', 'Bob123@edx.org', 'Bob123_edx_org'),
+        ('PK', 'PK', 'Bob123123123123123123123123123123123123', 'Bob123123123123123123123123123'),
+        ('us', 'US', 'Bob-1231231&23123+1231(2312312312@3123123123', 'Bob-1231231_23123_1231_2312312'),
     )
     @ddt.unpack
-    def test_register_form_third_party_auth_running_google(self, input_country_code, expected_country_code):
+    def test_register_form_third_party_auth_running_google(
+            self,
+            input_country_code,
+            expected_country_code,
+            input_username,
+            expected_username):
         no_extra_fields_setting = {}
         country_options = (
             [
@@ -1101,7 +1153,7 @@ class RegistrationViewTest(ThirdPartyAuthTestMixin, UserAPITestCase):
             "openedx.core.djangoapps.user_api.api.third_party_auth.pipeline", "google-oauth2",
             email="bob@example.com",
             fullname="Bob",
-            username="Bob123",
+            username=input_username,
             country=input_country_code
         ):
             self._assert_password_field_hidden(no_extra_fields_setting)
@@ -1147,7 +1199,7 @@ class RegistrationViewTest(ThirdPartyAuthTestMixin, UserAPITestCase):
                 no_extra_fields_setting,
                 {
                     u"name": u"username",
-                    u"defaultValue": u"Bob123",
+                    u"defaultValue": expected_username,
                     u"type": u"text",
                     u"required": True,
                     u"label": u"Public Username",
@@ -1165,14 +1217,15 @@ class RegistrationViewTest(ThirdPartyAuthTestMixin, UserAPITestCase):
             self._assert_reg_field(
                 {u"country": u"required"},
                 {
-                    u"label": u"Country",
+                    u"label": u"Country or Region of Residence",
                     u"name": u"country",
                     u"defaultValue": expected_country_code,
                     u"type": u"select",
                     u"required": True,
                     u"options": country_options,
+                    u"instructions": u"The country or region where you live.",
                     u"errorMessages": {
-                        u"required": u"Please select your Country."
+                        u"required": u"Select your country or region of residence."
                     },
                 }
             )
@@ -1198,7 +1251,7 @@ class RegistrationViewTest(ThirdPartyAuthTestMixin, UserAPITestCase):
                     {"value": "other", "name": "Other education", "default": False},
                 ],
                 "errorMessages": {
-                    "required": "Please select your highest level of education completed."
+                    "required": "Select the highest level of education you have completed."
                 }
             }
         )
@@ -1227,7 +1280,7 @@ class RegistrationViewTest(ThirdPartyAuthTestMixin, UserAPITestCase):
                     {"value": "other", "name": "Other education TRANSLATED", "default": False},
                 ],
                 "errorMessages": {
-                    "required": "Please select your highest level of education completed."
+                    "required": "Select the highest level of education you have completed."
                 }
             }
         )
@@ -1298,6 +1351,66 @@ class RegistrationViewTest(ThirdPartyAuthTestMixin, UserAPITestCase):
             }
         )
 
+    def test_register_form_profession_without_profession_options(self):
+        self._assert_reg_field(
+            {"profession": "required"},
+            {
+                "name": "profession",
+                "type": "text",
+                "required": True,
+                "label": "Profession",
+                "errorMessages": {
+                    "required": "Enter your profession."
+                }
+            }
+        )
+
+    @with_site_configuration(configuration={"EXTRA_FIELD_OPTIONS": {"profession": ["Software Engineer", "Teacher", "Other"]}})
+    def test_register_form_profession_with_profession_options(self):
+        self._assert_reg_field(
+            {"profession": "required"},
+            {
+                "name": "profession",
+                "type": "select",
+                "required": True,
+                "label": "Profession",
+                "options": self.PROFESSION_OPTIONS,
+                "errorMessages": {
+                    "required": "Select your profession."
+                },
+            }
+        )
+
+    def test_register_form_specialty_without_specialty_options(self):
+        self._assert_reg_field(
+            {"specialty": "required"},
+            {
+                "name": "specialty",
+                "type": "text",
+                "required": True,
+                "label": "Specialty",
+                "errorMessages": {
+                    "required": "Enter your specialty."
+                }
+            }
+        )
+
+    @with_site_configuration(configuration={"EXTRA_FIELD_OPTIONS": {"specialty": ["Aerospace", "Early Education", "N/A"]}})
+    def test_register_form_specialty_with_specialty_options(self):
+        self._assert_reg_field(
+            {"specialty": "required"},
+            {
+                "name": "specialty",
+                "type": "select",
+                "required": True,
+                "label": "Specialty",
+                "options": self.SPECIALTY_OPTIONS,
+                "errorMessages": {
+                    "required": "Select your specialty."
+                },
+            }
+        )
+
     def test_registration_form_mailing_address(self):
         self._assert_reg_field(
             {"mailing_address": "optional"},
@@ -1307,7 +1420,7 @@ class RegistrationViewTest(ThirdPartyAuthTestMixin, UserAPITestCase):
                 "required": False,
                 "label": "Mailing address",
                 "errorMessages": {
-                    "required": "Please enter your mailing address."
+                    "required": "Enter your mailing address."
                 }
             }
         )
@@ -1323,7 +1436,7 @@ class RegistrationViewTest(ThirdPartyAuthTestMixin, UserAPITestCase):
                     platform_name=settings.PLATFORM_NAME
                 ),
                 "errorMessages": {
-                    "required": "Please tell us your goals."
+                    "required": "Tell us your goals."
                 }
             }
         )
@@ -1337,7 +1450,7 @@ class RegistrationViewTest(ThirdPartyAuthTestMixin, UserAPITestCase):
                 "required": False,
                 "label": "City",
                 "errorMessages": {
-                    "required": "Please enter your City."
+                    "required": "Enter your city."
                 }
             }
         )
@@ -1373,13 +1486,14 @@ class RegistrationViewTest(ThirdPartyAuthTestMixin, UserAPITestCase):
         self._assert_reg_field(
             {"country": "required"},
             {
-                "label": "Country",
+                "label": "Country or Region of Residence",
                 "name": "country",
                 "type": "select",
+                "instructions": "The country or region where you live.",
                 "required": True,
                 "options": country_options,
                 "errorMessages": {
-                    "required": "Please select your Country."
+                    "required": "Select your country or region of residence."
                 },
             }
         )
@@ -1616,6 +1730,8 @@ class RegistrationViewTest(ThirdPartyAuthTestMixin, UserAPITestCase):
             "goals",
             "honor_code",
             "terms_of_service",
+            "specialty",
+            "profession",
         ],
     )
     def test_field_order_override(self):

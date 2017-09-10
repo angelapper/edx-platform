@@ -251,6 +251,11 @@ class ViewsTestCase(ModuleStoreTestCase):
     """
     Tests for views.py methods.
     """
+    YESTERDAY = 'yesterday'
+    DATES = {
+        YESTERDAY: datetime.now(UTC) - timedelta(days=1),
+        None: None,
+    }
 
     def setUp(self):
         super(ViewsTestCase, self).setUp()
@@ -751,7 +756,7 @@ class ViewsTestCase(ModuleStoreTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('Financial Assistance Application', response.content)
 
-    @ddt.data(([CourseMode.AUDIT, CourseMode.VERIFIED], CourseMode.AUDIT, True, datetime.now(UTC) - timedelta(days=1)),
+    @ddt.data(([CourseMode.AUDIT, CourseMode.VERIFIED], CourseMode.AUDIT, True, YESTERDAY),
               ([CourseMode.AUDIT, CourseMode.VERIFIED], CourseMode.VERIFIED, True, None),
               ([CourseMode.AUDIT, CourseMode.VERIFIED], CourseMode.AUDIT, False, None),
               ([CourseMode.AUDIT], CourseMode.AUDIT, False, None))
@@ -770,7 +775,7 @@ class ViewsTestCase(ModuleStoreTestCase):
 
         # Create Course Modes
         for mode in course_modes:
-            CourseModeFactory.create(mode_slug=mode, course_id=course.id, expiration_datetime=expiration)
+            CourseModeFactory.create(mode_slug=mode, course_id=course.id, expiration_datetime=self.DATES[expiration])
 
         # Enroll user in the course
         CourseEnrollmentFactory(course_id=course.id, user=self.user, mode=enrollment_mode)
@@ -1398,7 +1403,7 @@ class ProgressPageTests(ProgressPageBaseTests):
         resp = self._get_progress_page()
         self.assertContains(resp, u"View Certificate")
 
-        self.assertContains(resp, u"You can keep working for a higher grade")
+        self.assertContains(resp, u"earned a certificate for this course")
         cert_url = certs_api.get_certificate_url(course_id=self.course.id, uuid=certificate.verify_uuid)
         self.assertContains(resp, cert_url)
 
@@ -1447,12 +1452,12 @@ class ProgressPageTests(ProgressPageBaseTests):
         """Test that query counts remain the same for self-paced and instructor-paced courses."""
         SelfPacedConfiguration(enabled=self_paced_enabled).save()
         self.setup_course(self_paced=self_paced)
-        with self.assertNumQueries(42, table_blacklist=QUERY_COUNT_TABLE_BLACKLIST), check_mongo_calls(1):
+        with self.assertNumQueries(43, table_blacklist=QUERY_COUNT_TABLE_BLACKLIST), check_mongo_calls(2):
             self._get_progress_page()
 
     @ddt.data(
-        (False, 42, 28),
-        (True, 35, 24)
+        (False, 43, 27),
+        (True, 36, 23)
     )
     @ddt.unpack
     def test_progress_queries(self, enable_waffle, initial, subsequent):
@@ -1460,14 +1465,14 @@ class ProgressPageTests(ProgressPageBaseTests):
         with grades_waffle().override(ASSUME_ZERO_GRADE_IF_ABSENT, active=enable_waffle):
             with self.assertNumQueries(
                 initial, table_blacklist=QUERY_COUNT_TABLE_BLACKLIST
-            ), check_mongo_calls(1):
+            ), check_mongo_calls(2):
                 self._get_progress_page()
 
             # subsequent accesses to the progress page require fewer queries.
             for _ in range(2):
                 with self.assertNumQueries(
                     subsequent, table_blacklist=QUERY_COUNT_TABLE_BLACKLIST
-                ), check_mongo_calls(1):
+                ), check_mongo_calls(2):
                     self._get_progress_page()
 
     @patch(
@@ -1565,6 +1570,7 @@ class ProgressPageTests(ProgressPageBaseTests):
         'lms.djangoapps.grades.new.course_grade.CourseGrade.summary',
         PropertyMock(return_value={'grade': 'Pass', 'percent': 0.75, 'section_breakdown': [], 'grade_breakdown': {}})
     )
+    @patch('courseware.views.views.is_course_passed', PropertyMock(return_value=True))
     def test_message_for_audit_mode(self):
         """ Verify that message appears on progress page, if learner is enrolled
          in audit mode.
@@ -1579,6 +1585,7 @@ class ProgressPageTests(ProgressPageBaseTests):
             u'You are enrolled in the audit track for this course. The audit track does not include a certificate.'
         )
 
+    @patch('courseware.views.views.is_course_passed', PropertyMock(return_value=True))
     def test_invalidated_cert_data(self):
         """
         Verify that invalidated cert data is returned if cert is invalidated.
@@ -1597,6 +1604,7 @@ class ProgressPageTests(ProgressPageBaseTests):
         self.assertEqual(response.cert_status, 'invalidated')
         self.assertEqual(response.title, 'Your certificate has been invalidated')
 
+    @patch('courseware.views.views.is_course_passed', PropertyMock(return_value=True))
     def test_downloadable_get_cert_data(self):
         """
         Verify that downloadable cert data is returned if cert is downloadable.
@@ -1611,6 +1619,7 @@ class ProgressPageTests(ProgressPageBaseTests):
         self.assertEqual(response.cert_status, 'downloadable')
         self.assertEqual(response.title, 'Your certificate is available')
 
+    @patch('courseware.views.views.is_course_passed', PropertyMock(return_value=True))
     def test_generating_get_cert_data(self):
         """
         Verify that generating cert data is returned if cert is generating.
@@ -1625,6 +1634,7 @@ class ProgressPageTests(ProgressPageBaseTests):
         self.assertEqual(response.cert_status, 'generating')
         self.assertEqual(response.title, "We're working on it...")
 
+    @patch('courseware.views.views.is_course_passed', PropertyMock(return_value=True))
     def test_unverified_get_cert_data(self):
         """
         Verify that unverified cert data is returned if cert is unverified.
@@ -1639,6 +1649,7 @@ class ProgressPageTests(ProgressPageBaseTests):
         self.assertEqual(response.cert_status, 'unverified')
         self.assertEqual(response.title, "Certificate unavailable")
 
+    @patch('courseware.views.views.is_course_passed', PropertyMock(return_value=True))
     def test_request_get_cert_data(self):
         """
         Verify that requested cert data is returned if cert is to be requested.
@@ -1705,10 +1716,16 @@ class ProgressPageShowCorrectnessTests(ProgressPageBaseTests):
     # Constants used in the test data
     NOW = datetime.now(UTC)
     DAY_DELTA = timedelta(days=1)
-    YESTERDAY = NOW - DAY_DELTA
-    TODAY = NOW
-    TOMORROW = NOW + DAY_DELTA
+    YESTERDAY = 'yesterday'
+    TODAY = 'today'
+    TOMORROW = 'tomorrow'
     GRADER_TYPE = 'Homework'
+    DATES = {
+        YESTERDAY: NOW - DAY_DELTA,
+        TODAY: NOW,
+        TOMORROW: NOW + DAY_DELTA,
+        None: None,
+    }
 
     def setUp(self):
         super(ProgressPageShowCorrectnessTests, self).setUp()
@@ -1853,12 +1870,12 @@ class ProgressPageShowCorrectnessTests(ProgressPageBaseTests):
         (ShowCorrectness.PAST_DUE, TOMORROW, True),
     )
     @ddt.unpack
-    def test_progress_page_no_problem_scores(self, show_correctness, due_date, graded):
+    def test_progress_page_no_problem_scores(self, show_correctness, due_date_name, graded):
         """
         Test that "no problem scores are present" for a course with no problems,
         regardless of the various show correctness settings.
         """
-        self.setup_course(show_correctness=show_correctness, due_date=due_date, graded=graded)
+        self.setup_course(show_correctness=show_correctness, due_date=self.DATES[due_date_name], graded=graded)
         resp = self._get_progress_page()
 
         # Test that no problem scores are present
@@ -1893,11 +1910,12 @@ class ProgressPageShowCorrectnessTests(ProgressPageBaseTests):
         (ShowCorrectness.PAST_DUE, TOMORROW, True, False),
     )
     @ddt.unpack
-    def test_progress_page_hide_scores_from_learner(self, show_correctness, due_date, graded, show_grades):
+    def test_progress_page_hide_scores_from_learner(self, show_correctness, due_date_name, graded, show_grades):
         """
         Test that problem scores are hidden on progress page when correctness is not available to the learner, and that
         they are visible when it is.
         """
+        due_date = self.DATES[due_date_name]
         self.setup_course(show_correctness=show_correctness, due_date=due_date, graded=graded)
         self.add_problem()
 
@@ -1944,10 +1962,11 @@ class ProgressPageShowCorrectnessTests(ProgressPageBaseTests):
         (ShowCorrectness.PAST_DUE, TOMORROW, True, True),
     )
     @ddt.unpack
-    def test_progress_page_hide_scores_from_staff(self, show_correctness, due_date, graded, show_grades):
+    def test_progress_page_hide_scores_from_staff(self, show_correctness, due_date_name, graded, show_grades):
         """
         Test that problem scores are hidden from staff viewing a learner's progress page only if show_correctness=never.
         """
+        due_date = self.DATES[due_date_name]
         self.setup_course(show_correctness=show_correctness, due_date=due_date, graded=graded)
         self.add_problem()
 
@@ -2056,7 +2075,8 @@ class GenerateUserCertTests(ModuleStoreTestCase):
             number='verified',
             end=datetime.now(),
             display_name='Verified Course',
-            grade_cutoffs={'cutoff': 0.75, 'Pass': 0.5}
+            grade_cutoffs={'cutoff': 0.75, 'Pass': 0.5},
+            self_paced=True
         )
         self.enrollment = CourseEnrollment.enroll(self.student, self.course.id, mode='honor')
         self.assertTrue(self.client.login(username=self.student, password='123456'))

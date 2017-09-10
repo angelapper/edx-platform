@@ -3,28 +3,36 @@
 Tests for the course home page.
 """
 from datetime import datetime, timedelta
+
 import ddt
 import mock
-from pytz import UTC
-from waffle.testutils import override_flag
-
-from courseware.tests.factories import StaffFactory
 from django.conf import settings
 from django.core.urlresolvers import reverse
 from django.http import QueryDict
 from django.utils.http import urlquote_plus
+from pytz import UTC
+from waffle.models import Flag
+from waffle.testutils import override_flag
+
+from commerce.models import CommerceConfiguration
+from commerce.utils import EcommerceService
+from course_modes.models import CourseMode
+from courseware.tests.factories import StaffFactory
 from openedx.core.djangoapps.waffle_utils.testutils import WAFFLE_TABLES, override_waffle_flag
-from openedx.features.course_experience import SHOW_REVIEWS_TOOL_FLAG, UNIFIED_COURSE_TAB_FLAG
+from openedx.features.course_experience import (
+    SHOW_REVIEWS_TOOL_FLAG,
+    SHOW_UPGRADE_MSG_ON_COURSE_HOME,
+    UNIFIED_COURSE_TAB_FLAG
+)
 from student.models import CourseEnrollment
 from student.tests.factories import UserFactory
 from util.date_utils import strftime_localized
 from xmodule.modulestore import ModuleStoreEnum
-from xmodule.modulestore.tests.django_utils import CourseUserType, SharedModuleStoreTestCase
+from xmodule.modulestore.tests.django_utils import CourseUserType, ModuleStoreTestCase, SharedModuleStoreTestCase
 from xmodule.modulestore.tests.factories import CourseFactory, ItemFactory, check_mongo_calls
-
-from ... import COURSE_PRE_START_ACCESS_FLAG
 from .helpers import add_course_mode
-from .test_course_updates import create_course_update
+from .test_course_updates import create_course_update, remove_course_updates
+from ... import COURSE_PRE_START_ACCESS_FLAG
 
 TEST_PASSWORD = 'test'
 TEST_CHAPTER_NAME = 'Test Chapter'
@@ -68,6 +76,7 @@ class CourseHomePageTestCase(SharedModuleStoreTestCase):
     """
     Base class for testing the course home page.
     """
+
     @classmethod
     def setUpClass(cls):
         """
@@ -113,11 +122,12 @@ class CourseHomePageTestCase(SharedModuleStoreTestCase):
 
 class TestCourseHomePage(CourseHomePageTestCase):
     def setUp(self):
-        """
-        Set up for the tests.
-        """
         super(TestCourseHomePage, self).setUp()
         self.client.login(username=self.user.username, password=TEST_PASSWORD)
+
+    def tearDown(self):
+        remove_course_updates(self.user, self.course)
+        super(TestCourseHomePage, self).tearDown()
 
     @override_waffle_flag(UNIFIED_COURSE_TAB_FLAG, active=True)
     def test_welcome_message_when_unified(self):
@@ -198,6 +208,10 @@ class TestCourseHomePageAccess(CourseHomePageTestCase):
         # Add a welcome message
         create_course_update(self.course, self.staff_user, TEST_WELCOME_MESSAGE)
 
+    def tearDown(self):
+        remove_course_updates(self.staff_user, self.course)
+        super(TestCourseHomePageAccess, self).tearDown()
+
     @override_waffle_flag(UNIFIED_COURSE_TAB_FLAG, active=True)
     @override_waffle_flag(SHOW_REVIEWS_TOOL_FLAG, active=True)
     @ddt.data(
@@ -208,7 +222,7 @@ class TestCourseHomePageAccess(CourseHomePageTestCase):
     )
     @ddt.unpack
     def test_home_page(self, user_type, expected_message):
-        self.user = self.create_user_for_course(self.course, user_type)
+        self.create_user_for_course(self.course, user_type)
 
         # Render the course home page
         url = course_home_url(self.course)
@@ -246,7 +260,7 @@ class TestCourseHomePageAccess(CourseHomePageTestCase):
         """
         Verifies the course home tab when not unified.
         """
-        self.user = self.create_user_for_course(self.course, user_type)
+        self.create_user_for_course(self.course, user_type)
 
         # Render the course home page
         url = course_home_url(self.course)
@@ -288,7 +302,7 @@ class TestCourseHomePageAccess(CourseHomePageTestCase):
         the student dashboard, not a 404.
         """
         future_course = self.create_future_course()
-        self.user = self.create_user_for_course(future_course, CourseUserType.ENROLLED)
+        self.create_user_for_course(future_course, CourseUserType.ENROLLED)
 
         url = course_home_url(future_course)
         response = self.client.get(url)
@@ -309,7 +323,7 @@ class TestCourseHomePageAccess(CourseHomePageTestCase):
         the student dashboard, not a 404, even if the localized date is unicode
         """
         future_course = self.create_future_course()
-        self.user = self.create_user_for_course(future_course, CourseUserType.ENROLLED)
+        self.create_user_for_course(future_course, CourseUserType.ENROLLED)
 
         fake_unicode_start_time = u"üñîçø∂é_ßtå®t_tîµé"
         mock_strftime_localized.return_value = fake_unicode_start_time
@@ -328,7 +342,7 @@ class TestCourseHomePageAccess(CourseHomePageTestCase):
         """
         Ensure a non-existent course results in a 404.
         """
-        self.user = self.create_user_for_course(self.course, CourseUserType.ANONYMOUS)
+        self.create_user_for_course(self.course, CourseUserType.ANONYMOUS)
 
         url = course_home_url_from_string('not/a/course')
         response = self.client.get(url)
@@ -355,22 +369,94 @@ class TestCourseHomePageAccess(CourseHomePageTestCase):
         self.assertContains(response, TEST_COURSE_HOME_MESSAGE_ANONYMOUS)
 
         # Verify that unenrolled users are shown an enroll call to action message
-        self.user = self.create_user_for_course(self.course, CourseUserType.UNENROLLED)
+        user = self.create_user_for_course(self.course, CourseUserType.UNENROLLED)
         url = course_home_url(self.course)
         response = self.client.get(url)
         self.assertContains(response, TEST_COURSE_HOME_MESSAGE)
         self.assertContains(response, TEST_COURSE_HOME_MESSAGE_UNENROLLED)
 
         # Verify that enrolled users are not shown a message when enrolled and course has begun
-        CourseEnrollment.enroll(self.user, self.course.id)
+        CourseEnrollment.enroll(user, self.course.id)
         url = course_home_url(self.course)
         response = self.client.get(url)
         self.assertNotContains(response, TEST_COURSE_HOME_MESSAGE)
 
         # Verify that enrolled users are shown 'days until start' message before start date
         future_course = self.create_future_course()
-        CourseEnrollment.enroll(self.user, future_course.id)
+        CourseEnrollment.enroll(user, future_course.id)
         url = course_home_url(future_course)
         response = self.client.get(url)
         self.assertContains(response, TEST_COURSE_HOME_MESSAGE)
         self.assertContains(response, TEST_COURSE_HOME_MESSAGE_PRE_START)
+
+
+class CourseHomeFragmentViewTests(ModuleStoreTestCase):
+    CREATE_USER = False
+
+    def setUp(self):
+        super(CourseHomeFragmentViewTests, self).setUp()
+        CommerceConfiguration.objects.create(checkout_on_ecommerce_service=True)
+
+        end = datetime.now(UTC) + timedelta(days=30)
+        self.course = CourseFactory(
+            start=datetime.now(UTC) - timedelta(days=30),
+            end=end,
+        )
+        self.url = course_home_url(self.course)
+
+        CourseMode.objects.create(course_id=self.course.id, mode_slug=CourseMode.AUDIT)
+        self.verified_mode = CourseMode.objects.create(
+            course_id=self.course.id,
+            mode_slug=CourseMode.VERIFIED,
+            min_price=100,
+            expiration_datetime=end,
+            sku='test'
+        )
+
+        self.user = UserFactory()
+        self.client.login(username=self.user.username, password=TEST_PASSWORD)
+
+        name = SHOW_UPGRADE_MSG_ON_COURSE_HOME.waffle_namespace._namespaced_name(
+            SHOW_UPGRADE_MSG_ON_COURSE_HOME.flag_name)
+        self.flag, __ = Flag.objects.update_or_create(name=name, defaults={'everyone': True})
+
+    def assert_upgrade_message_not_displayed(self):
+        response = self.client.get(self.url)
+        self.assertNotIn('vc-message', response.content)
+
+    def assert_upgrade_message_displayed(self):
+        response = self.client.get(self.url)
+        self.assertIn('vc-message', response.content)
+        url = EcommerceService().get_checkout_page_url(self.verified_mode.sku)
+        expected = '<a class="btn-upgrade" href="{url}">Upgrade (${price})</a>'.format(
+            url=url,
+            price=self.verified_mode.min_price
+        )
+        self.assertIn(expected, response.content)
+
+    def test_no_upgrade_message_if_logged_out(self):
+        self.client.logout()
+        self.assert_upgrade_message_not_displayed()
+
+    def test_no_upgrade_message_if_not_enrolled(self):
+        self.assertEqual(len(CourseEnrollment.enrollments_for_user(self.user)), 0)
+        self.assert_upgrade_message_not_displayed()
+
+    def test_no_upgrade_message_if_verified_track(self):
+        CourseEnrollment.enroll(self.user, self.course.id, CourseMode.VERIFIED)
+        self.assert_upgrade_message_not_displayed()
+
+    def test_no_upgrade_message_if_upgrade_deadline_passed(self):
+        self.verified_mode.expiration_datetime = datetime.now(UTC) - timedelta(days=20)
+        self.verified_mode.save()
+        self.assert_upgrade_message_not_displayed()
+
+    def test_no_upgrade_message_if_flag_disabled(self):
+        self.flag.everyone = False
+        self.flag.save()
+        CourseEnrollment.enroll(self.user, self.course.id, CourseMode.AUDIT)
+        self.assert_upgrade_message_not_displayed()
+
+    def test_display_upgrade_message_if_audit_and_deadline_not_passed(self):
+        CourseEnrollment.enroll(self.user, self.course.id, CourseMode.AUDIT)
+        self.assert_upgrade_message_displayed()

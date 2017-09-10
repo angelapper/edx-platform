@@ -33,6 +33,7 @@ from django.db.models import Count
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import Signal, receiver
 from django.utils import timezone
+from django.utils.functional import cached_property
 from django.utils.translation import ugettext_lazy as _
 from django.utils.translation import ugettext_noop
 from django_countries.fields import CountryField
@@ -49,9 +50,12 @@ import lms.lib.comment_client as cc
 import request_cache
 from certificates.models import GeneratedCertificate
 from course_modes.models import CourseMode
+from courseware.models import DynamicUpgradeDeadlineConfiguration, CourseDynamicUpgradeDeadlineConfiguration
 from enrollment.api import _default_course_mode
 from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
+from openedx.core.djangoapps.schedules.models import ScheduleConfig
 from openedx.core.djangoapps.site_configuration import helpers as configuration_helpers
+from openedx.core.djangoapps.theming.helpers import get_current_site
 from openedx.core.djangoapps.xmodule_django.models import CourseKeyField, NoneToEmptyManager
 from track import contexts
 from util.milestones_helpers import is_entrance_exams_enabled
@@ -992,10 +996,26 @@ class CourseEnrollment(models.Model):
     checking course dates, user permissions, etc.) This logic is currently
     scattered across our views.
     """
-    MODEL_TAGS = ['course_id', 'is_active', 'mode']
+    MODEL_TAGS = ['course', 'is_active', 'mode']
 
     user = models.ForeignKey(User)
-    course_id = CourseKeyField(max_length=255, db_index=True)
+
+    course = models.ForeignKey(
+        CourseOverview,
+        db_constraint=False,
+    )
+
+    @property
+    def course_id(self):
+        return self._course_id
+
+    @course_id.setter
+    def course_id(self, value):
+        if isinstance(value, basestring):
+            self._course_id = CourseKey.from_string(value)
+        else:
+            self._course_id = value
+
     created = models.DateTimeField(auto_now_add=True, null=True, db_index=True)
 
     # If is_active is False, then the student is not considered to be enrolled
@@ -1017,8 +1037,8 @@ class CourseEnrollment(models.Model):
     MODE_CACHE_NAMESPACE = u'CourseEnrollment.mode_and_active'
 
     class Meta(object):
-        unique_together = (('user', 'course_id'),)
-        ordering = ('user', 'course_id')
+        unique_together = (('user', 'course'),)
+        ordering = ('user', 'course')
 
     def __init__(self, *args, **kwargs):
         super(CourseEnrollment, self).__init__(*args, **kwargs)
@@ -1181,7 +1201,7 @@ class CourseEnrollment(models.Model):
                                   cost=cost, currency=currency)
 
     @classmethod
-    def send_signal_full(cls, event, user=user, mode=mode, course_id=course_id, cost=None, currency=None):
+    def send_signal_full(cls, event, user=user, mode=mode, course_id=None, cost=None, currency=None):
         """
         Sends a signal announcing changes in course enrollment status.
         This version should be used if you don't already have a CourseEnrollment object
@@ -1433,7 +1453,7 @@ class CourseEnrollment(models.Model):
         try:
             return cls.objects.filter(
                 user=user,
-                course_id__startswith=querystring,
+                course__id__startswith=querystring,
                 is_active=1
             ).exists()
         except cls.DoesNotExist:
@@ -1655,11 +1675,6 @@ class CourseEnrollment(models.Model):
         return self.user.username
 
     @property
-    def course(self):
-        # Deprecated. Please use the `course_overview` property instead.
-        return self.course_overview
-
-    @property
     def course_overview(self):
         """
         Returns a CourseOverview of the course to which this enrollment refers.
@@ -1669,13 +1684,17 @@ class CourseEnrollment(models.Model):
             If the course is re-published within the lifetime of this
             CourseEnrollment object, then the value of this property will
             become stale.
-       """
+        """
         if not self._course_overview:
             try:
                 self._course_overview = CourseOverview.get_from_id(self.course_id)
             except (CourseOverview.DoesNotExist, IOError):
                 self._course_overview = None
         return self._course_overview
+
+    @cached_property
+    def verified_mode(self):
+        return CourseMode.verified_mode_for_course(self.course_id)
 
     @property
     def upgrade_deadline(self):
@@ -1699,7 +1718,11 @@ class CourseEnrollment(models.Model):
             return None
 
         try:
-            if self.schedule:
+            schedule_driven_deadlines_enabled = (
+                DynamicUpgradeDeadlineConfiguration.is_enabled()
+                or CourseDynamicUpgradeDeadlineConfiguration.is_enabled(self.course_id)
+            )
+            if schedule_driven_deadlines_enabled and self.schedule and self.schedule.upgrade_deadline is not None:
                 log.debug(
                     'Schedules: Pulling upgrade deadline for CourseEnrollment %d from Schedule %d.',
                     self.id, self.schedule.id
@@ -1712,11 +1735,9 @@ class CourseEnrollment(models.Model):
             pass
 
         try:
-            verified_mode = CourseMode.verified_mode_for_course(self.course_id)
-
-            if verified_mode:
+            if self.verified_mode:
                 log.debug('Schedules: Defaulting to verified mode expiration date-time for %s.', self.course_id)
-                return verified_mode.expiration_datetime
+                return self.verified_mode.expiration_datetime
             else:
                 log.debug('Schedules: No verified mode located for %s.', self.course_id)
         except CourseMode.DoesNotExist:
@@ -2361,6 +2382,21 @@ class LanguageProficiency(models.Model):
         choices=settings.ALL_LANGUAGES,
         help_text=_("The ISO 639-1 language code for this language.")
     )
+
+
+class SocialLink(models.Model):  # pylint: disable=model-missing-unicode
+    """
+    Represents a URL connecting a particular social platform to a user's social profile.
+
+    The platforms are listed in the lms/common.py file under SOCIAL_PLATFORMS.
+    Each entry has a display name, a url_stub that describes a required
+    component of the stored URL and an example of a valid URL.
+
+    The stored social_link value must adhere to the form 'https://www.[url_stub][username]'.
+    """
+    user_profile = models.ForeignKey(UserProfile, db_index=True, related_name='social_links')
+    platform = models.CharField(max_length=30)
+    social_link = models.CharField(max_length=100, blank=True)
 
 
 class CourseEnrollmentAttribute(models.Model):

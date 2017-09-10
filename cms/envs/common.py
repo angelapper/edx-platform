@@ -65,6 +65,9 @@ from lms.envs.common import (
     MEDIA_ROOT,
     MEDIA_URL,
 
+    # Lazy Gettext
+    _,
+
     # Django REST framework configuration
     REST_FRAMEWORK,
 
@@ -125,8 +128,8 @@ from openedx.core.lib.license import LicenseMixin
 # Dummy secret key for dev/test
 SECRET_KEY = 'dev key'
 
-STUDIO_NAME = "Studio"
-STUDIO_SHORT_NAME = "Studio"
+STUDIO_NAME = _("Your Platform Studio")
+STUDIO_SHORT_NAME = _("Studio")
 FEATURES = {
     'GITHUB_PUSH': False,
 
@@ -719,7 +722,7 @@ base_vendor_js = [
     'edx-ui-toolkit/js/utils/html-utils.js',
 
     # Load Bootstrap and supporting libraries
-    'common/js/vendor/tether.js',
+    'common/js/vendor/popper.js',
     'common/js/vendor/bootstrap.js',
 
     # Finally load RequireJS
@@ -1063,6 +1066,9 @@ INSTALLED_APPS = [
 
     # Waffle related utilities
     'openedx.core.djangoapps.waffle_utils',
+
+    # Dynamic schedules
+    'openedx.core.djangoapps.schedules.apps.SchedulesConfig',
 
     # DRF filters
     'django_filters',

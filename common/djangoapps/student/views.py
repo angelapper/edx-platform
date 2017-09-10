@@ -145,7 +145,7 @@ REGISTRATION_UTM_PARAMETERS = {
 }
 REGISTRATION_UTM_CREATED_AT = 'registration_utm_created_at'
 # used to announce a registration
-REGISTER_USER = Signal(providing_args=["user", "profile"])
+REGISTER_USER = Signal(providing_args=["user", "registration"])
 
 # Disable this warning because it doesn't make sense to completely refactor tests to appease Pylint
 # pylint: disable=logging-format-interpolation
@@ -208,11 +208,8 @@ def index(request, extra_context=None, user=AnonymousUser()):
     # Insert additional context for use in the template
     context.update(extra_context)
 
-    # Add marketable programs to the context if the multi-tenant programs switch is enabled.
-    if waffle.switch_is_active('get-multitenant-programs'):
-        programs_list = get_programs_with_type(request.site, include_hidden=False)
-
-    context['programs_list'] = programs_list
+    # Add marketable programs to the context.
+    context['programs_list'] = get_programs_with_type(request.site, include_hidden=False)
 
     return render_to_response('index.html', context)
 
@@ -248,6 +245,7 @@ def cert_info(user, course_overview, course_mode):
     """
     if not course_overview.may_certify():
         return {}
+    # Note: this should be rewritten to use the certificates API
     return _cert_info(
         user,
         course_overview,
@@ -2022,7 +2020,7 @@ def create_account_with_params(request, params):
         )
 
     # Announce registration
-    REGISTER_USER.send(sender=None, user=user, profile=profile)
+    REGISTER_USER.send(sender=None, user=user, registration=registration)
 
     create_comments_service_user(user)
 

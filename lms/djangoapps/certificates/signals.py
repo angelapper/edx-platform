@@ -6,14 +6,20 @@ import logging
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
-from certificates.models import \
-    CertificateGenerationCourseSetting, \
-    CertificateWhitelist, \
+from certificates.models import (
+    CertificateGenerationCourseSetting,
+    CertificateWhitelist,
+    CertificateStatuses,
     GeneratedCertificate
+)
 from certificates.tasks import generate_certificate
-from courseware import courses
 from lms.djangoapps.grades.new.course_grade_factory import CourseGradeFactory
+from openedx.core.djangoapps.certificates.api import (
+    auto_certificate_generation_enabled,
+    auto_certificate_generation_enabled_for_course,
+)
 from openedx.core.djangoapps.certificates.config import waffle
+from openedx.core.djangoapps.content.course_overviews.models import CourseOverview
 from openedx.core.djangoapps.signals.signals import COURSE_GRADE_NOW_PASSED, LEARNER_NOW_VERIFIED
 from student.models import CourseEnrollment
 
@@ -23,23 +29,9 @@ log = logging.getLogger(__name__)
 
 @receiver(post_save, sender=CertificateWhitelist, dispatch_uid="append_certificate_whitelist")
 def _listen_for_certificate_whitelist_append(sender, instance, **kwargs):  # pylint: disable=unused-argument
-    switches = waffle.waffle()
-    # All flags enabled
-    if (
-        not switches.is_enabled(waffle.SELF_PACED_ONLY) and
-        not switches.is_enabled(waffle.INSTRUCTOR_PACED_ONLY)
-    ):
+    course = CourseOverview.get_from_id(instance.course_id)
+    if not auto_certificate_generation_enabled_for_course(course):
         return
-
-    # Only SELF_PACED_ONLY flag enabled
-    if not switches.is_enabled(waffle.INSTRUCTOR_PACED_ONLY):
-        if not courses.get_course_by_id(instance.course_id, depth=0).self_paced:
-            return
-
-    # Only INSTRUCTOR_PACED_ONLY flag enabled
-    if not switches.is_enabled(waffle.SELF_PACED_ONLY):
-        if courses.get_course_by_id(instance.course_id, depth=0).self_paced:
-            return
 
     fire_ungenerated_certificate_task(instance.user, instance.course_id)
     log.info(u'Certificate generation task initiated for {user} : {course} via whitelist'.format(
@@ -54,22 +46,10 @@ def _listen_for_passing_grade(sender, user, course_id, **kwargs):  # pylint: dis
     Listen for a learner passing a course, send cert generation task,
     downstream signal from COURSE_GRADE_CHANGED
     """
-    # No flags enabled
-    if (
-        not waffle.waffle().is_enabled(waffle.SELF_PACED_ONLY) and
-        not waffle.waffle().is_enabled(waffle.INSTRUCTOR_PACED_ONLY)
-    ):
+    course = CourseOverview.get_from_id(course_id)
+    if not auto_certificate_generation_enabled_for_course(course):
         return
 
-    # Only SELF_PACED_ONLY flag enabled
-    if waffle.waffle().is_enabled(waffle.SELF_PACED_ONLY):
-        if not courses.get_course_by_id(course_id, depth=0).self_paced:
-            return
-
-    # Only INSTRUCTOR_PACED_ONLY flag enabled
-    if waffle.waffle().is_enabled(waffle.INSTRUCTOR_PACED_ONLY):
-        if courses.get_course_by_id(course_id, depth=0).self_paced:
-            return
     if fire_ungenerated_certificate_task(user, course_id):
         log.info(u'Certificate generation task initiated for {user} : {course} via passing grade'.format(
             user=user.id,
@@ -83,29 +63,33 @@ def _listen_for_track_change(sender, user, **kwargs):  # pylint: disable=unused-
     Catches a track change signal, determines user status,
     calls fire_ungenerated_certificate_task for passing grades
     """
-    if (
-        not waffle.waffle().is_enabled(waffle.SELF_PACED_ONLY) and
-        not waffle.waffle().is_enabled(waffle.INSTRUCTOR_PACED_ONLY)
-    ):
+    if not auto_certificate_generation_enabled():
         return
+
     user_enrollments = CourseEnrollment.enrollments_for_user(user=user)
     grade_factory = CourseGradeFactory()
     for enrollment in user_enrollments:
-        if grade_factory.read(user=user, course=enrollment.course).passed:
-            if fire_ungenerated_certificate_task(user, enrollment.course.id):
+        if grade_factory.read(user=user, course=enrollment.course_overview).passed:
+            if fire_ungenerated_certificate_task(user, enrollment.course_id):
                 log.info(u'Certificate generation task initiated for {user} : {course} via track change'.format(
                     user=user.id,
-                    course=enrollment.course.id
+                    course=enrollment.course_id
                 ))
 
 
 def fire_ungenerated_certificate_task(user, course_key):
     """
     Helper function to fire un-generated certificate tasks
-    :param user: A User object.
-    :param course_id: A CourseKey object.
+
+    The 'mode_is_verified' query is copied from the GeneratedCertificate model,
+    but is done here in an attempt to reduce traffic to the workers.
+    If the learner is verified and their cert has the 'unverified' status,
+    we regenerate the cert.
     """
-    if GeneratedCertificate.certificate_for_student(user, course_key) is None:
+    enrollment_mode, __ = CourseEnrollment.enrollment_mode_for_user(user, course_key)
+    mode_is_verified = enrollment_mode in GeneratedCertificate.VERIFIED_CERTS_MODES
+    cert = GeneratedCertificate.certificate_for_student(user, course_key)
+    if mode_is_verified and (cert is None or cert.status == 'unverified'):
         generate_certificate.apply_async(kwargs={
             'student': unicode(user.id),
             'course_key': unicode(course_key),

@@ -33,6 +33,7 @@ import imp
 import sys
 import os
 
+import dealer.git
 from path import Path as path
 from warnings import simplefilter
 from django.utils.translation import ugettext_lazy as _
@@ -45,7 +46,7 @@ from lms.djangoapps.lms_xblock.mixin import LmsBlockMixin
 
 ################################### FEATURES ###################################
 # The display name of the platform to be used in templates/emails/etc.
-PLATFORM_NAME = "Your Platform Name Here"
+PLATFORM_NAME = _('Your Platform Name Here')
 CC_MERCHANT_NAME = PLATFORM_NAME
 
 PLATFORM_FACEBOOK_ACCOUNT = "http://www.facebook.com/YourPlatformFacebookAccount"
@@ -1644,13 +1645,6 @@ PIPELINE_JS = {
         'source_filenames': main_vendor_js,
         'output_filename': 'js/lms-main_vendor.js',
     },
-    'lms_bootstrap': {
-        'source_filenames': [
-            'common/js/vendor/tether.js',
-            'common/js/vendor/bootstrap.js',
-        ],
-        'output_filename': 'js/lms-bootstrap.js',
-    },
     'module-descriptor-js': {
         'source_filenames': rooted_glob(COMMON_ROOT / 'static/', 'xmodule/descriptors/js/*.js'),
         'output_filename': 'js/lms-module-descriptors.js',
@@ -2241,7 +2235,7 @@ INSTALLED_APPS = [
     'database_fixups',
 
     'openedx.core.djangoapps.waffle_utils',
-    'openedx.core.djangoapps.schedules',
+    'openedx.core.djangoapps.schedules.apps.SchedulesConfig',
 
     # Features
     'openedx.features.course_bookmarks',
@@ -2852,7 +2846,7 @@ OPENID_DOMAIN_PREFIX = 'openid:'
 
 ### Analytics Dashboard (Insights) settings
 ANALYTICS_DASHBOARD_URL = ""
-ANALYTICS_DASHBOARD_NAME = PLATFORM_NAME + " Insights"
+ANALYTICS_DASHBOARD_NAME = _('Your Platform Insights')
 
 # REGISTRATION CODES DISPLAY INFORMATION SUBTITUTIONS IN THE INVOICE ATTACHMENT
 INVOICE_CORP_ADDRESS = "Please place your corporate address\nin this configuration"
@@ -2878,7 +2872,8 @@ COURSE_ABOUT_VISIBILITY_PERMISSION = 'see_exists'
 # Enrollment API Cache Timeout
 ENROLLMENT_COURSE_DETAILS_CACHE_TIMEOUT = 60
 
-
+# Automatically clean up edx-django-oauth2-provider tokens on use
+OAUTH_DELETE_EXPIRED = True
 OAUTH_ID_TOKEN_EXPIRATION = 60 * 60
 
 # These tabs are currently disabled
@@ -2928,8 +2923,10 @@ ACCOUNT_VISIBILITY_CONFIGURATION = {
         'profile_image',
         'country',
         'time_zone',
+        'date_joined',
         'language_proficiencies',
         'bio',
+        'social_links',
         'account_privacy',
         # Not an actual field, but used to signal whether badges should be public.
         'accomplishments_shared',
@@ -2946,12 +2943,13 @@ ACCOUNT_VISIBILITY_CONFIGURATION = {
     "admin_fields": [
         "username",
         "email",
-        "date_joined",
         "is_active",
         "bio",
         "country",
+        "date_joined",
         "profile_image",
         "language_proficiencies",
+        "social_links",
         "name",
         "gender",
         "goals",
@@ -2962,6 +2960,32 @@ ACCOUNT_VISIBILITY_CONFIGURATION = {
         "account_privacy",
         "accomplishments_shared",
     ]
+}
+
+# The current list of social platforms to be shown to the user.
+#
+# url_stub represents the host URL, it must end with a forward
+# slash and represent the profile at https://www.[url_stub][username]
+#
+# The example will be used as a placeholder in the social link
+# input field as well as in some messaging describing an example of a
+# valid link.
+SOCIAL_PLATFORMS = {
+    'facebook': {
+        'display_name': 'Facebook',
+        'url_stub': 'facebook.com/',
+        'example': 'https://www.facebook.com/username'
+    },
+    'twitter': {
+        'display_name': 'Twitter',
+        'url_stub': 'twitter.com/',
+        'example': 'https://www.twitter.com/username'
+    },
+    'linkedin': {
+        'display_name': 'LinkedIn',
+        'url_stub': 'linkedin.com/in/',
+        'example': 'www.linkedin.com/in/username'
+    }
 }
 
 # E-Commerce API Configuration
@@ -3259,3 +3283,27 @@ COURSES_API_CACHE_TIMEOUT = 3600  # Value is in seconds
 
 ############## Settings for CourseGraph ############################
 COURSEGRAPH_JOB_QUEUE = LOW_PRIORITY_QUEUE
+
+
+############## Settings for ACE ####################################
+ACE_ENABLED_CHANNELS = [
+    'sailthru_email'
+]
+ACE_ENABLED_POLICIES = [
+    'bulk_email_optout'
+]
+ACE_CHANNEL_SAILTHRU_DEBUG = True
+ACE_CHANNEL_SAILTHRU_TEMPLATE_NAME = 'Automated Communication Engine Email'
+ACE_CHANNEL_SAILTHRU_API_KEY = None
+ACE_CHANNEL_SAILTHRU_API_SECRET = None
+
+ACE_ROUTING_KEY = LOW_PRIORITY_QUEUE
+
+EDX_PLATFORM_REVISION = os.environ.get('EDX_PLATFORM_REVISION')
+if not EDX_PLATFORM_REVISION:
+    try:
+        # Get git revision of the current file
+        EDX_PLATFORM_REVISION = dealer.git.Backend(path=REPO_ROOT).revision
+    except TypeError:
+        # Not a git repository
+        EDX_PLATFORM_REVISION = 'unknown'

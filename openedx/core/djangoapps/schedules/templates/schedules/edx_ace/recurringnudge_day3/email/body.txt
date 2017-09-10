@@ -1,0 +1,7 @@
+{% load i18n %}
+{% blocktrans trimmed %}
+    Keep learning today. Remember when you enrolled in {{course_name}} on edX.org? We do, and we’re glad
+    to have you! Come see what everyone is learning.
+{% endblocktrans %}
+
+{% trans "Keep learning" %} <{{course_url}}>
